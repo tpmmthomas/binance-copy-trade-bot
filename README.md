@@ -6,8 +6,8 @@ This program uses web scraping to monitor the positions opened by traders sharin
 1. Supports Only Bybit for actual trading (This is because the author is based in Hong Kong where Binance usage are restricted.)
 2. Telegram python program hangs from time to time (No idea why.)
 3. Slow checking intervals when the number of followed traders increases -- it takes around 6s to check each traders' positions on an e2-medium instance
-4. THe code isn't exactly at its cleanest state (I'm sorry! This is a one person project and I have other jobs.)
-5. Cannot set differnt leverage for different traders
+4. The code isn't exactly at its cleanest state (I'm sorry! This is a one person project and I have other jobs.)
+5. Cannot set different leverage for different traders due to bybit limitations
 
 
 ### Environment setup (Recommended)
@@ -53,12 +53,12 @@ Start by running backtesting of the bot first. Do not engage money before you un
 
 
 ### Buy Me A Coffee
-You could support my developement by using my refferal code at Bybit Trading platform. I highly recommend it.
+You could support my developement by using my referral code at Bybit Trading platform. I highly recommend Bybit.
 https://www.bybit.com/en-US/invite?ref=L9QLLJ  
 
 
 Donations are also welcome at the following addresses:
 
-BTC: bc1qx9sldvfqsggajdhc24pvflcyl5x4lrc75303xq
-USDT (ERC20/BSC): 0xb5bb89624842E3De8FC9e5F6dC2b3951d91f7dBa
-ATOM: cosmos132v3ud437dvelw79xhe3pnned7nrzkvy8cespd
+BTC: bc1qx9sldvfqsggajdhc24pvflcyl5x4lrc75303xq  
+USDT (ERC20/BSC): 0xb5bb89624842E3De8FC9e5F6dC2b3951d91f7dBa  
+ATOM: cosmos132v3ud437dvelw79xhe3pnned7nrzkvy8cespd   
