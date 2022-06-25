@@ -2,7 +2,7 @@ import threading
 from ct_bybit import BybitClient
 import sys
 
-sys.path.append("/path/to/binance-copy-trade-bot/config")
+sys.path.append("/home/thomas/binance-copy-trade-bot/config")
 from config import chrome_location, driver_location
 import time
 import logging
@@ -330,11 +330,11 @@ class WebScraping(threading.Thread):
             if self.num_no_data[uid] > 35:
                 self.num_no_data[uid] = 4
             if self.num_no_data[uid] >= 3 and prev_position != "x":
-                logger.info(f"{uid} Change to no position.")
-                self.userdb.save_position(uid, "x", True)
-                self.changeNotiTime[uid] = datetime.now()
+                logger.info(f"{name} Change to no position.")
+                self.userdb.save_position(uid, "x",True)
+                # self.changeNotiTime[uid] = datetime.now()
                 now = datetime.now() + timedelta(hours=8)
-                self.lastPosTime = datetime.now() + timedelta(hours=8)
+                # self.lastPosTime = datetime.now() + timedelta(hours=8)
                 tosend = (
                     f"Trader {name}, Current time: " + str(now) + "\nNo positions.\n"
                 )
@@ -347,7 +347,7 @@ class WebScraping(threading.Thread):
                             "message": tosend,
                         }
                     )
-                    if users["toTrade"]:
+                    if users['traders'][uid]["toTrade"]:
                         tosend = "Making the following trades: \n" + txlist.to_string()
                         self.userdb.insert_command(
                             {
@@ -377,17 +377,17 @@ class WebScraping(threading.Thread):
                         )
                         del client
             elif self.num_no_data[uid] >= 3:
-                self.userdb.save_position(uid, "x", False)
+                self.userdb.save_position(uid, "x",False)
             diff = datetime.now() - datetime.strptime(lasttime, "%y-%m-%d %H:%M:%S")
-            if diff.total_seconds() / 3600 >= 24:
-                for users in following_users:
-                    self.userdb.insert_command(
-                        {
-                            "cmd": "send_message",
-                            "chat_id": users["chat_id"],
-                            "message": f"Trader {name}: 24 hours no position update.",
-                        }
-                    )
+            # if diff.total_seconds() / 3600 >= 24:
+                # for users in following_users:
+                #     self.userdb.insert_command(
+                #         {
+                #             "cmd": "send_message",
+                #             "chat_id": users["chat_id"],
+                #             "message": f"Trader {name}: 24 hours no position update.",
+                #         }
+                #     )
         else:
             self.num_no_data[uid] = 0
         try:
@@ -400,6 +400,7 @@ class WebScraping(threading.Thread):
             return
         if prev_position == "x":
             isChanged = True
+            txlist = self.changes(prev_position, output["data"])
         else:
             prev_position = pd.read_json(prev_position)
             try:
@@ -416,8 +417,8 @@ class WebScraping(threading.Thread):
             else:
                 isChanged = False
         if isChanged:
-            self.userdb.save_position(uid, output["data"].to_json(), True)
-            logger.info(f"{uid} changed positions.")
+            self.userdb.save_position(uid, output["data"].to_json(),True)
+            logger.info(f"{name} changed positions.")
             now = datetime.now() + timedelta(hours=8)
             self.lastPosTime = datetime.now() + timedelta(hours=8)
             numrows = output["data"].shape[0]
@@ -474,7 +475,7 @@ class WebScraping(threading.Thread):
             # txlist = self.changes(prev_position, output["data"])
             for users in following_users:
                 if users["traders"][uid]["toTrade"] and not txlist.empty:
-                    tosend = "Making the following trades: " + txlist.to_string()
+                    tosend = "Making the following trades: \n" + txlist.to_string()
                     self.userdb.insert_command(
                         {
                             "cmd": "send_message",
@@ -503,19 +504,19 @@ class WebScraping(threading.Thread):
                     )
                     del client
         else:
-            self.userdb.save_position(uid, output["data"].to_json(), False)
+            self.userdb.save_position(uid, output["data"].to_json(),False)
         self.first_run = False
         self.error[uid] = 0
         diff = datetime.now() - datetime.strptime(lasttime, "%y-%m-%d %H:%M:%S")
-        if diff.total_seconds() / 3600 >= 24:
-            for users in following_users:
-                self.userdb.insert_command(
-                    {
-                        "cmd": "send_message",
-                        "chat_id": users["chat_id"],
-                        "message": f"Trader {self.name}: 24 hours no position update.",
-                    }
-                )
+        # if diff.total_seconds() / 3600 >= 24:
+        #     for users in following_users:
+        #         self.userdb.insert_command(
+        #             {
+        #                 "cmd": "send_message",
+        #                 "chat_id": users["chat_id"],
+        #                 "message": f"Trader {self.name}: 24 hours no position update.",
+        #             }
+        #         )
 
     def run(self):  # get the positions
         while not self.isStop.is_set():
@@ -525,7 +526,7 @@ class WebScraping(threading.Thread):
             # try:
             urls = self.userdb.retrieve_traders()
             for uid in urls:
-                logger.info(f"Running {uid['name']}.")
+                # logger.info(f"Running {uid['name']}.")
                 try:
                     self.driver.get(uid["url"])
                 except:

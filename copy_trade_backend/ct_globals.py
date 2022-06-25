@@ -10,7 +10,7 @@ import pandas as pd
 import urllib.parse
 import sys
 
-sys.path.append("/path/to/binance-copy-trade-bot/data")
+sys.path.append("/home/thomas/binance-copy-trade-bot/data")
 from credentials import db_user, db_pw
 
 logging.basicConfig(
@@ -37,40 +37,46 @@ class ctGlobal:
         return math.ceil(n * multiplier) / multiplier
 
     def reload_symbols(self, userdb):
-        while not self.stopevent.is_set():
-            time.sleep(60 * 60 * 3)
-            client = HTTP(
-                "https://api.bybit.com",
-                api_key="",
-                api_secret="",
-                request_timeout=40,
-            )
-            res = client.query_symbol()
-            for user in userdb.retrieve_users():
-                new_lev = {}
-                for sym in res:
-                    if sym in user["leverage"]:
-                        new_lev[sym] = user["leverage"]["sym"]
+        client = HTTP(
+            "https://api.bybit.com",
+            api_key="",
+            api_secret="",
+            request_timeout=40,
+        )
+        res = client.query_symbol()
+        for user in userdb.retrieve_users():
+            new_lev = {}
+            for sym in res['result']:
+                if sym['name'] == "ret_code":
+                    logger.info("LARGE ERROR! WHY RET_CODE IN HERE")
+                    new_lev = user["leverage"]
+                    break
+                if sym['name'] in user["leverage"]:
+                    new_lev[sym['name'] ] = user["leverage"][sym['name'] ]
+                else:
+                    new_lev[sym['name'] ] = user["leverage"]["ret_code"]
+                    userdb.insert_command(
+                        {
+                            "cmd": "send_message",
+                            "chat_id": user["chat_id"],
+                            "message": f"There is a new symbol {sym['name']} available, you might want to adjust its settings.",
+                        }
+                    )
+            userdb.update_leverage(user["chat_id"], new_lev)
+            for trader in user["traders"]:
+                new_prop = {}
+                for sym in res['result']:
+                    if sym['name'] == "ret_code":
+                        logger.info("LARGE ERROR! WHY RET_CODE IN HERE")
+                        new_prop = user["traders"][trader]["proportion"]
+                        break
+                    if sym['name'] in user["traders"][trader]["proportion"]:
+                        new_prop[sym['name']] = user["traders"][trader]["proportion"][sym['name']]
                     else:
-                        new_lev[sym] = user["leverage"]["XRPUSDT"]
-                        userdb.insert_command(
-                            {
-                                "cmd": "send_message",
-                                "chat_id": user["chat_id"],
-                                "message": f"There is a new symbol {sym} available, you might want to adjust its settings.",
-                            }
-                        )
-                userdb.update_leverage(user["chat_id"], new_lev)
-                for trader in user["traders"]:
-                    new_prop = {}
-                    for sym in res:
-                        if sym in user["traders"][trader]["proportion"]:
-                            new_prop[sym] = user["traders"][trader]["proportion"][sym]
-                        else:
-                            new_prop[sym] = user["traders"][trader]["proportion"][
-                                "XRPUSDT"
-                            ]
-                    userdb.update_proportion(user["chat_id"], trader, new_prop)
+                        new_prop[sym['name']] = user["traders"][trader]["proportion"][
+                            "ret_code"
+                        ]
+                userdb.update_proportion(user["chat_id"], trader, new_prop)
 
     def check_noti(self, userdb):
         while not self.stopevent.is_set():
@@ -157,7 +163,7 @@ class ctGlobal:
                             {
                                 "cmd": "send_message",
                                 "chat_id": chat_id,
-                                "message": f"Successfully deletd trader!",
+                                "message": f"Successfully deleted trader!",
                             }
                         )
                 todelete.append(noti["_id"])

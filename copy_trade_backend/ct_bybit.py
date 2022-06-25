@@ -353,7 +353,10 @@ class BybitClient:
                     "result"
                 ][0]["mark_price"]
             )
-            exec_price = float(tradeinfo[3])
+            if isinstance(tradeinfo[3],str):
+                exec_price = float(tradeinfo[3].replace(",",""))
+            else:
+                exec_price = float(tradeinfo[3])
             if abs(latest_price - exec_price) / exec_price > slippage:
                 self.userdb.insert_command(
                     {
@@ -364,10 +367,10 @@ class BybitClient:
                 )
             reqticksize = self.ticksize[tradeinfo[1]]
             reqstepsize = self.stepsize[tradeinfo[1]]
-            quant = self.round_up(quant, reqstepsize)
             if not isOpen and tradeinfo[4]:
                 quant = max(quant, positions[checkKey])
             collateral = (latest_price * quant) / leverage[tradeinfo[1]]
+            quant = self.round_up(quant, reqstepsize)
             quant = str(quant)
             if isOpen:
                 self.userdb.insert_command(

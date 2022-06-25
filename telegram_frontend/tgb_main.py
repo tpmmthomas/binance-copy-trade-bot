@@ -4,7 +4,7 @@ from tgb_handlers import tgHandlers
 from tgb_globals import tgGlobals
 import sys
 
-sys.path.append("/path/to/binance-copy-trade-bot/data")
+sys.path.append("/home/thomas/binance-copy-trade-bot/data")
 from credentials import bot_token, auth_code, admin_code
 from telegram.ext import Updater
 import logging

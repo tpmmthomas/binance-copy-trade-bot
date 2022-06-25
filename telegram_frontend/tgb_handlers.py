@@ -21,8 +21,7 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from datetime import datetime
 import sys
-
-sys.path.append("/path/to/binance-copy-trade-bot/data")
+sys.path.append("/home/thomas/binance-copy-trade-bot/data")
 from credentials import ip
 
 import logging
@@ -172,7 +171,7 @@ class tgHandlers:
         # add to database
         self.dbobject.add_user(chat_id, user_doc)
         # next: init trader and send to everyone following
-        traderdoc = self.dbobject.get_trader(trader_uid)
+        traderdoc = self.dbobject.get_trader(trader_name)
         if traderdoc is not None:
             traderdoc["num_followed"] += 1
             self.dbobject.update_trader(trader_uid, traderdoc)
@@ -280,7 +279,7 @@ class tgHandlers:
             "positions": {},
         }
         self.dbobject.update_user(chat_id, userdoc)
-        traderdoc = self.dbobject.get_trader(trader_uid)
+        traderdoc = self.dbobject.get_trader(trader_name)
         if traderdoc is not None:
             traderdoc["num_followed"] += 1
             self.dbobject.update_trader(trader_uid, traderdoc)
@@ -289,12 +288,10 @@ class tgHandlers:
                 text=f"Thanks! {trader_name}'s latest position:",
             )
             try:
-                df = pd.read_json(traderdoc["positions"])
+                df = pd.read_json(traderdoc["positions"]) 
                 numrows = df.shape[0]
                 if numrows <= 10:
-                    tosend = (
-                        f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
-                    )
+                    tosend = f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
                     self.updater.bot.sendMessage(chat_id=chat_id, text=tosend)
                 else:
                     firstdf = df.iloc[0:10]
@@ -343,9 +340,7 @@ class tgHandlers:
                 df = pd.read_json(traderdoc["positions"])
                 numrows = df.shape[0]
                 if numrows <= 10:
-                    tosend = (
-                        f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
-                    )
+                    tosend = f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
                     self.updater.bot.sendMessage(chat_id=chat_id, text=tosend)
                 else:
                     firstdf = df.iloc[0:10]
@@ -517,10 +512,8 @@ class tgHandlers:
             context.user_data["toTrade"] = True
         else:
             context.user_data["toTrade"] = False
-            update.message.reply_text(
-                "Please wait...", reply_markup=ReplyKeyboardRemove()
-            )
-            # logger.info(f"Confirm here {context.user_data}")
+            update.message.reply_text("Please wait...", reply_markup=ReplyKeyboardRemove())
+            # logger.info(f"Confirm here {context.user_data}") 
             if context.user_data["First"]:
                 t1 = threading.Thread(
                     target=self.initUserThread,
@@ -625,7 +618,7 @@ class tgHandlers:
 
     def url_add(self, update: Update, context: CallbackContext) -> int:
         url = update.message.text
-        context.user_data["uid"] = url
+        context.user_data['uid'] = url
         update.message.reply_text("Please wait...", reply_markup=ReplyKeyboardRemove())
         try:
             url = (
@@ -702,8 +695,7 @@ class tgHandlers:
     def view_traderInfo(self, update: Update, context: CallbackContext):
         traderinfo = self.dbobject.get_trader(update.message.text)
         update.message.reply_text(
-            f"{update.message.text}'s current position: \n(Last position update: {str(traderinfo['lastPosTime'])})",
-            reply_markup=ReplyKeyboardRemove(),
+            f"{update.message.text}'s current position: \n(Last position update: {str(traderinfo['lastPosTime'])})",  reply_markup=ReplyKeyboardRemove()
         )
         msg = traderinfo["positions"]
         if msg == "x":
@@ -875,7 +867,7 @@ class tgHandlers:
             context.user_data["symbol"],
             lev,
         )
-        update.message.reply_text("The leverage is changed successfully!")
+        update.message.reply_text("The leverage is changed successfully!", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def set_all_proportion(self, update: Update, context: CallbackContext):
@@ -904,7 +896,7 @@ class tgHandlers:
         )
         if ("toTrade" not in traderinfo) or (not traderinfo["toTrade"]):
             update.message.reply_text(
-                "You did not set copy trade option for this trader. If needed, /delete this trader and /add again."
+                "You did not set copy trade option for this trader. If needed, /delete this trader and /add again.", reply_markup=ReplyKeyboardRemove()
             )
             return ConversationHandler.END
         context.user_data["trader"] = traderinfo["uid"]
@@ -923,7 +915,7 @@ class tgHandlers:
         self.dbobject.set_all_proportion(
             update.message.chat_id, context.user_data["trader"], prop
         )
-        update.message.reply_text("Success!")
+        update.message.reply_text("Success!",reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def set_proportion(self, update: Update, context: CallbackContext):
@@ -1022,7 +1014,7 @@ class tgHandlers:
     def getLeverageReal(self, update: Update, context: CallbackContext):
         symbol = update.message.text
         result = self.dbobject.query_field(update.message.chat_id, "leverage", symbol)
-        update.message.reply_text(f"The leverage set for {symbol} is {result}x.")
+        update.message.reply_text(f"The leverage set for {symbol} is {result}x.", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def get_proportion(self, update: Update, context: CallbackContext):
@@ -1083,13 +1075,13 @@ class tgHandlers:
             return REALSETLEV4
         result = self.dbobject.query_field(
             update.message.chat_id,
-            "trader",
+            "traders",
             context.user_data["trader"],
             "proportion",
             symbol,
         )
         update.message.reply_text(
-            f"The proportion set for {context.user_data['traderNameef']}, {symbol} is {result}x."
+            f"The proportion set for {context.user_data['traderName']}, {symbol} is {result}x.", reply_markup=ReplyKeyboardRemove()
         )
         return ConversationHandler.END
 
@@ -1176,7 +1168,7 @@ class tgHandlers:
             context.user_data["symbol"],
             tmode,
         )
-        update.message.reply_text("Success!")
+        update.message.reply_text("Success!",reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def set_allomode(self, update: Update, context: CallbackContext):
@@ -1233,7 +1225,7 @@ class tgHandlers:
         self.dbobject.set_all_tmode(
             update.message.chat_id, context.user_data["trader"], tmode
         )
-        update.message.reply_text(f"Successfully changed trading mode!")
+        update.message.reply_text(f"Successfully changed trading mode!",reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def change_safetyratio(self, update: Update, context: CallbackContext):
@@ -1251,7 +1243,7 @@ class tgHandlers:
             update.message.reply_text("This is not a valid ratio, please enter again.")
             return LEVTRADER6
         self.dbobject.set_safety(update.message.chat_id, safety_ratio)
-        update.message.reply_text("Success!")
+        update.message.reply_text("Success!",reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def change_slippage(self, update: Update, context: CallbackContext):
@@ -1269,7 +1261,7 @@ class tgHandlers:
             update.message.reply_text("This is not a valid ratio, please enter again.")
             return SLIPPAGE
         self.dbobject.set_slippage(update.message.chat_id, safety_ratio)
-        update.message.reply_text("Success!")
+        update.message.reply_text("Success!",reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def change_api(self, update: Update, context: CallbackContext):
@@ -1300,7 +1292,7 @@ class tgHandlers:
         self.dbobject.set_api(
             update.message.chat_id, context.user_data["api_key"], update.message.text
         )
-        update.message.reply_text("Success!")
+        update.message.reply_text("Success!",reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def check_balance(self, update: Update, context: CallbackContext):

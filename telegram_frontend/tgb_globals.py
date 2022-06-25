@@ -10,8 +10,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 
-sys.path.append("/path/to/binance-copy-trade-bot/data")
-sys.path.append("/path/to/binance-copy-trade-bot/config")
+sys.path.append("/home/thomas/binance-copy-trade-bot/data")
+sys.path.append("/home/thomas/binance-copy-trade-bot/config")
 from credentials import db_user, db_pw
 from config import chrome_location, driver_location
 import logging
