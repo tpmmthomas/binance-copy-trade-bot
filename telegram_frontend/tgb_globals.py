@@ -10,8 +10,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 
-sys.path.append("/path/to/binance-copy-trade-bot/data")
-sys.path.append("/path/to/binance-copy-trade-bot/config")
+sys.path.append("/home/thomas/binance-copy-trade-bot/data")
+sys.path.append("/home/thomas/binance-copy-trade-bot/config")
 from credentials import db_user, db_pw
 from config import chrome_location, driver_location
 import logging
@@ -51,18 +51,19 @@ class tgGlobals:
 
     def retrieve_command(self, db, stopcond):
         while not stopcond.is_set():
-            try:
-                msgs = db.getall("commandtable")
-                todelete = []
-                for msg in msgs:
-                    if msg["cmd"] == "send_message":
-                        self.updater.bot.sendMessage(msg["chat_id"], msg["message"])
-                    todelete.append(msg["_id"])
-                db.delete_command(todelete)
-            except Exception as e:
-                logger.error(f"Connection Error: {str(e)}")
             time.sleep(1)
-
+            msgs = db.getall("commandtable")
+            for msg in msgs:
+                todelete = []
+                if msg["cmd"] == "send_message":
+                    try:
+                        for i in range(len(msg['message'])//500 + 1):
+                            time.sleep(0.1)
+                            self.updater.bot.sendMessage(msg["chat_id"], msg["message"][500*i:500*(i+1)])
+                        todelete.append(msg["_id"])
+                        db.delete_command(todelete)
+                    except Exception as e:
+                        logger.error(f"Connection Error: {str(e)}")
     def round_up(self, n, decimals=0):
         multiplier = 10**decimals
         return math.ceil(n * multiplier) / multiplier

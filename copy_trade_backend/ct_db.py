@@ -10,6 +10,7 @@ class ctDatabase:
         self.notitable = self.db["Notifications"]
         self.commandtable = self.db["Commands"]
         self.tradertable = self.db["Traders"]
+        self.historytable = self.db["TradeHistory"]
         self.dblock = glb.dblock
         self.globals = glb
 
@@ -59,6 +60,14 @@ class ctDatabase:
                     "lastPosTime": datetime.now().strftime("%y-%m-%d %H:%M:%S"),
                 }
             }
+            history = {
+            "uid": uid,
+            "positions": x,
+            "lastPosTime": datetime.now().strftime("%y-%m-%d %H:%M:%S"),
+            }
+            self.dblock.acquire()
+            self.historytable.insert_one(history)
+            self.dblock.release()
         else:
             newvalues = {
                 "$set": {

@@ -133,6 +133,7 @@ class BybitClient:
         positionSide,
         ref_price,
         uid,
+        todelete
     ):  # ONLY to be run as thread
         numTries = 0
         time.sleep(1)
@@ -165,6 +166,8 @@ class BybitClient:
                                 "message": f"Order ID {orderId} ({positionKey}) fulfilled successfully.",
                             }
                         )
+                    if todelete:
+                        return
                     resultqty = round(abs(float(result["cum_exec_qty"])), 3)
                     resultqty = -resultqty if positionSide == "SHORT" else resultqty
                     # ADD TO POSITION
@@ -218,6 +221,8 @@ class BybitClient:
                 elif result["order_status"] == "PartiallyFilled":
                     updatedQty = float(result["cum_exec_qty"]) - executed_qty
                     updatedQty = -updatedQty if positionSide == "SHORT" else updatedQty
+                    if todelete:
+                        continue
                     if isOpen:
                         self.userdb.update_positions(
                             self.chat_id, uid, positionKey, resultqty, 1
@@ -280,6 +285,7 @@ class BybitClient:
         tmodes,
         positions,
         slippage,
+        todelete = False
     ):
         # logger.info("DEBUGx\n" + df.to_string())
         df = df.values
@@ -316,9 +322,10 @@ class BybitClient:
                     side = "Sell"
                 try:
                     self.client.set_leverage(
-                        symbol=tradeinfo[1], leverage=leverage[tradeinfo[1]]
+                        symbol=tradeinfo[1], buy_leverage=leverage[tradeinfo[1]],sell_leverage=leverage[tradeinfo[1]]
                     )
-                except:
+                except Exception as e:
+                    logger.error(f"Leverage error {str(e)}")
                     pass
             else:
                 positionSide = types[5:]
@@ -353,7 +360,10 @@ class BybitClient:
                     "result"
                 ][0]["mark_price"]
             )
-            exec_price = float(tradeinfo[3])
+            if isinstance(tradeinfo[3],str):
+                exec_price = float(tradeinfo[3].replace(",",""))
+            else:
+                exec_price = float(tradeinfo[3])
             if abs(latest_price - exec_price) / exec_price > slippage:
                 self.userdb.insert_command(
                     {
@@ -364,10 +374,11 @@ class BybitClient:
                 )
             reqticksize = self.ticksize[tradeinfo[1]]
             reqstepsize = self.stepsize[tradeinfo[1]]
-            quant = self.round_up(quant, reqstepsize)
             if not isOpen and tradeinfo[4]:
-                quant = max(quant, positions[checkKey])
+                if abs(positions[checkKey]) > abs(quant):
+                    quant = abs(positions[checkKey])
             collateral = (latest_price * quant) / leverage[tradeinfo[1]]
+            quant = self.round_up(quant, reqstepsize)
             quant = str(quant)
             if isOpen:
                 self.userdb.insert_command(
@@ -447,11 +458,16 @@ class BybitClient:
                             positionSide,
                             -1,
                             uid,
+                            todelete
                         ),
                     )
                     t1.start()
                 except Exception as e:
                     logger.error(str(e))
+                    if str(e).find("reduce-only") != -1:
+                        self.userdb.update_positions(
+                                self.chat_id, uid, checkKey, 0, 0
+                            )
                     logger.error("Error in processing request during trade opening.")
             else:
                 if isinstance(tradeinfo[3], str):
@@ -508,6 +524,7 @@ class BybitClient:
                             positionSide,
                             -1,
                             uid,
+                            todelete
                         ),
                     )
                     t1.start()
