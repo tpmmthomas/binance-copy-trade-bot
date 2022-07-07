@@ -20,6 +20,7 @@ from pybit.usdt_perpetual import HTTP
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from datetime import datetime
+import requests
 import sys
 sys.path.append("/home/thomas/binance-copy-trade-bot/data")
 from credentials import ip
@@ -126,7 +127,6 @@ class tgHandlers:
         safe_ratio,
         trader_name,
         trader_uid,
-        trader_url,
         api_key,
         api_secret,
         toTrade,
@@ -163,7 +163,6 @@ class tgHandlers:
                     "uid": trader_uid,
                     "toTrade": toTrade,
                     "tmode": tmoded,
-                    "url": trader_url,
                     "positions": {},
                 }
             },
@@ -207,7 +206,7 @@ class tgHandlers:
                 )
         else:
             # add to trader database
-            df = self.globals.get_init_traderPosition(trader_url)
+            df = self.globals.get_init_traderPosition(trader_uid)
             try:
                 df = df.to_json()
             except:
@@ -218,7 +217,6 @@ class tgHandlers:
                 "lastPosTime": datetime.now().strftime("%y-%m-%d %H:%M:%S"),
                 "name": trader_name,
                 "num_followed": 1,
-                "url": trader_url,
             }
             self.dbobject.add_trader(traderdoc)
             self.updater.bot.sendMessage(
@@ -253,7 +251,7 @@ class tgHandlers:
                 )
 
     def addTraderThread(
-        self, chat_id, trader_name, trader_uid, trader_url, toTrade, tmode
+        self, chat_id, trader_name, trader_uid, toTrade, tmode
     ):
         client = HTTP(
             "https://api.bybit.com",
@@ -275,7 +273,6 @@ class tgHandlers:
             "uid": trader_uid,
             "toTrade": toTrade,
             "tmode": tmoded,
-            "url": trader_url,
             "positions": {},
         }
         self.dbobject.update_user(chat_id, userdoc)
@@ -318,7 +315,7 @@ class tgHandlers:
                 )
         else:
             # add to trader database
-            df = self.globals.get_init_traderPosition(trader_url)
+            df = self.globals.get_init_traderPosition(trader_uid)
             try:
                 df = df.to_json()
             except:
@@ -329,7 +326,6 @@ class tgHandlers:
                 "lastPosTime": datetime.now().strftime("%y-%m-%d %H:%M:%S"),
                 "name": trader_name,
                 "num_followed": 1,
-                "url": trader_url,
             }
             self.dbobject.add_trader(traderdoc)
             self.updater.bot.sendMessage(
@@ -366,40 +362,17 @@ class tgHandlers:
                     parse_mode=telegram.ParseMode.MARKDOWN,
                 )
 
-    def retrieveUserName(self, url):
+    def retrieveUserName(self, uid):
         success = False
         name = ""
         try:
-            myDriver = webdriver.Chrome(
-                self.globals.driver_location, options=self.globals.options
-            )
+            r = requests.post("https://www.binance.com/bapi/futures/v2/public/future/leaderboard/getOtherLeaderboardBaseInfo",json={
+                "encryptedUid": uid
+            })
+            assert r.status_code == 200
+            name = r.json()['data']['nickName']
         except:
             return None
-        i = 0
-        while (
-            not success
-            or name == "No Battle Record Found"
-            or name.find("Latest trade:") != -1
-        ):
-            if i >= 10:
-                return None
-            i += 1
-            try:
-                myDriver.get(url)
-            except:
-                return None
-            time.sleep(4)
-            soup = BeautifulSoup(myDriver.page_source, features="html.parser")
-            x = soup.get_text()
-            x = x.split("\n")[4]
-            idx = x.find("'s")
-            x = x[idx - 30 : idx]
-            try:
-                name = self.format_username(x, myDriver.page_source)
-                success = True
-            except:
-                continue
-        myDriver.quit()
         return name
 
     def start(self, update: Update, context: CallbackContext) -> int:
@@ -476,13 +449,11 @@ class tgHandlers:
             "%s has entered the first url.", update.message.from_user.first_name
         )
         try:
-            url = (
-                "https://www.binance.com/en/futures-activity/leaderboard/user?uid="
-                + url
-                + "&tradeType=PERPETUAL"
-            )
-            code = urllib.request.urlopen(url).getcode()
-            assert code == 200
+            r = requests.post("https://www.binance.com/bapi/futures/v1/public/future/leaderboard/getOtherPosition",json={
+                "encryptedUid": url,
+                "tradeType": "PERPETUAL"
+            })
+            assert r.status_code == 200
         except:
             update.message.reply_text(
                 "Sorry! Your UID is invalid. Please try entering again."
@@ -494,7 +465,6 @@ class tgHandlers:
                 "Sorry! Your UID is invalid. Please try entering again."
             )
             return TRADERURL
-        context.user_data["url"] = url
         context.user_data["name"] = traderName
         context.user_data["First"] = True
         update.message.reply_text(
@@ -523,7 +493,6 @@ class tgHandlers:
                         context.user_data["safe_ratio"],
                         context.user_data["name"],
                         context.user_data["uid"],
-                        context.user_data["url"],
                         context.user_data["api_key"],
                         context.user_data["api_secret"],
                         context.user_data["toTrade"],
@@ -538,7 +507,6 @@ class tgHandlers:
                         update.message.chat_id,
                         context.user_data["name"],
                         context.user_data["uid"],
-                        context.user_data["url"],
                         context.user_data["toTrade"],
                         -1,
                     ),
@@ -572,7 +540,6 @@ class tgHandlers:
                     context.user_data["safe_ratio"],
                     context.user_data["name"],
                     context.user_data["uid"],
-                    context.user_data["url"],
                     context.user_data["api_key"],
                     context.user_data["api_secret"],
                     context.user_data["toTrade"],
@@ -587,7 +554,6 @@ class tgHandlers:
                     update.message.chat_id,
                     context.user_data["name"],
                     context.user_data["uid"],
-                    context.user_data["url"],
                     context.user_data["toTrade"],
                     context.user_data["tmode"],
                 ),
@@ -621,28 +587,22 @@ class tgHandlers:
         context.user_data['uid'] = url
         update.message.reply_text("Please wait...", reply_markup=ReplyKeyboardRemove())
         try:
-            url = (
-                "https://www.binance.com/en/futures-activity/leaderboard/user?uid="
-                + url
-                + "&tradeType=PERPETUAL"
-            )
-            myDriver = webdriver.Chrome(
-                self.globals.driver_location, options=self.globals.options
-            )
-            myDriver.get(url)
+            r = requests.post("https://www.binance.com/bapi/futures/v1/public/future/leaderboard/getOtherPosition",json={
+                "encryptedUid": url,
+                "tradeType": "PERPETUAL"
+            })
+            assert r.status_code == 200
         except:
             update.message.reply_text(
-                "Sorry! Your URL is invalid. Please try entering again."
+                "Sorry! Your UID is invalid. Please try entering again."
             )
             return TRADERURL2
-        myDriver.quit()
         traderName = self.retrieveUserName(url)
         if traderName is None:
             update.message.reply_text(
-                "Sorry! Your URL is invalid. Please try entering again."
+                "Sorry! Your UID is invalid. Please try entering again."
             )
             return TRADERURL2
-        context.user_data["url"] = url
         context.user_data["name"] = traderName
         context.user_data["First"] = False
         update.message.reply_text(

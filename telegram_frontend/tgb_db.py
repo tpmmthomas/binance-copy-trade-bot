@@ -197,7 +197,8 @@ class dbOperations:
             result = result["result"]["USDT"]
             tosend = f"Your USDT account balance:\nBalance: {result['equity']}\nAvailable: {result['available_balance']}\nRealised PNL: {result['realised_pnl']}\nUnrealized PNL: {result['unrealised_pnl']}"
             self.updater.bot.sendMessage(chat_id=chat_id, text=tosend)
-        except:
+        except Exception as e:
+            logger.info(str(e))
             self.updater.bot.sendMessage(
                 chat_id=chat_id, text="Unable to retrieve balance."
             )

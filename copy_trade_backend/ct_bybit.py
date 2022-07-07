@@ -364,14 +364,15 @@ class BybitClient:
                 exec_price = float(tradeinfo[3].replace(",",""))
             else:
                 exec_price = float(tradeinfo[3])
-            if abs(latest_price - exec_price) / exec_price > slippage:
+            if abs(latest_price - exec_price) / exec_price > slippage and isOpen:
                 self.userdb.insert_command(
                     {
                         "cmd": "send_message",
                         "chat_id": self.chat_id,
-                        "message": f"The execute price of {tradeinfo[1]} is {exec_price}, but the current price is {latest_price}, which is over the preset leverage of {leverage}. The trade will not be executed.",
+                        "message": f"The execute price of {tradeinfo[1]} is {exec_price}, but the current price is {latest_price}, which is over the preset slippage of {slippage}. The trade will not be executed.",
                     }
                 )
+                continue
             reqticksize = self.ticksize[tradeinfo[1]]
             reqstepsize = self.stepsize[tradeinfo[1]]
             if not isOpen and tradeinfo[4]:
