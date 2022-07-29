@@ -54,7 +54,7 @@ class ctGlobal:
                 if sym['name'] in user["leverage"]:
                     new_lev[sym['name'] ] = user["leverage"][sym['name'] ]
                 else:
-                    new_lev[sym['name'] ] = user["leverage"]["ret_code"]
+                    new_lev[sym['name'] ] = user["leverage"]["XRPUSDT"]
                     userdb.insert_command(
                         {
                             "cmd": "send_message",
@@ -74,7 +74,7 @@ class ctGlobal:
                         new_prop[sym['name']] = user["traders"][trader]["proportion"][sym['name']]
                     else:
                         new_prop[sym['name']] = user["traders"][trader]["proportion"][
-                            "ret_code"
+                            "XRPUSDT"
                         ]
                 userdb.update_proportion(user["chat_id"], trader, new_prop)
 
@@ -156,6 +156,7 @@ class ctGlobal:
                             user["traders"][uid]["tmode"],
                             user["traders"][uid]["positions"],
                             user["slippage"],
+                            True
                         )
                         del user["traders"][uid]
                         userdb.update_user(chat_id, user)

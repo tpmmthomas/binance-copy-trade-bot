@@ -60,20 +60,22 @@ class ctDatabase:
                     "lastPosTime": datetime.now().strftime("%y-%m-%d %H:%M:%S"),
                 }
             }
+            history = {
+            "uid": uid,
+            "positions": x,
+            "lastPosTime": datetime.now().strftime("%y-%m-%d %H:%M:%S"),
+            }
+            self.dblock.acquire()
+            self.historytable.insert_one(history)
+            self.dblock.release()
         else:
             newvalues = {
                 "$set": {
                     f"positions": x,
                 }
             }
-        history = {
-            "uid": uid,
-            "positions": x,
-            "lastPosTime": datetime.now().strftime("%y-%m-%d %H:%M:%S"),
-        }
         self.dblock.acquire()
         self.tradertable.update_one(myquery, newvalues)
-        self.historytable.insert_one(history)
         self.dblock.release()
         return 0
 
