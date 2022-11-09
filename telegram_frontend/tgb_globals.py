@@ -10,9 +10,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 import requests
+import re
 
-sys.path.append("/home/thomas/binance-copy-trade-bot/data")
-sys.path.append("/home/thomas/binance-copy-trade-bot/config")
+sys.path.append("....../binance-copy-trade-bot/data")  # TODO please change this
+sys.path.append("....../binance-copy-trade-bot/config")  # TODO please change this
 from credentials import db_user, db_pw
 from config import chrome_location, driver_location
 import logging
@@ -59,21 +60,22 @@ class tgGlobals:
                 todelete = []
                 if msg["cmd"] == "send_message":
                     try:
-                        for i in range(len(msg['message'])//500 + 1):
+                        for i in range(len(msg["message"]) // 500 + 1):
                             time.sleep(0.1)
-                            sendmsg = msg["message"][500*i:500*(i+1)]
-                            if sendmsg != "":
+                            sendmsg = msg["message"][500 * i : 500 * (i + 1)]
+                            if re.sub(r"[^a-zA-Z0-9]+", "", sendmsg) != "":
                                 self.updater.bot.sendMessage(msg["chat_id"], sendmsg)
                         todelete.append(msg["_id"])
                         db.delete_command(todelete)
                     except Exception as e:
                         logger.error(f"Connection Error: {str(e)}")
+
     def round_up(self, n, decimals=0):
         multiplier = 10**decimals
         return math.ceil(n * multiplier) / multiplier
 
     @staticmethod
-    def format_results(poslist,times):
+    def format_results(poslist, times):
         symbol = []
         size = []
         entry_price = []
@@ -81,22 +83,21 @@ class tgGlobals:
         pnl = []
         margin = []
         calculatedMargin = []
-        times =  datetime.utcfromtimestamp(times/1000).strftime('%Y-%m-%d %H:%M:%S')
+        times = datetime.utcfromtimestamp(times / 1000).strftime("%Y-%m-%d %H:%M:%S")
         for dt in poslist:
-            symbol.append(dt['symbol'])
-            size.append(dt['amount'])
-            entry_price.append(dt['entryPrice'])
-            mark_price.append(dt['markPrice'])
+            symbol.append(dt["symbol"])
+            size.append(dt["amount"])
+            entry_price.append(dt["entryPrice"])
+            mark_price.append(dt["markPrice"])
             pnl.append(f"{round(dt['pnl'],2)} ({round(dt['roe']*100,2)}%)")
-            percentage = dt['roe']
-            if float(dt['entryPrice']) == 0:
+            percentage = dt["roe"]
+            if float(dt["entryPrice"]) == 0:
                 margin.append("nan")
                 calculatedMargin.append(False)
                 continue
-            price = (
-                float(dt['markPrice'])
-                - float(dt['entryPrice'])
-            ) / float(dt['entryPrice'])
+            price = (float(dt["markPrice"]) - float(dt["entryPrice"])) / float(
+                dt["entryPrice"]
+            )
             if percentage == 0 or price == 0:
                 margin.append("nan")
                 calculatedMargin.append(False)
@@ -117,17 +118,17 @@ class tgGlobals:
 
     def get_init_traderPosition(self, uid):
         try:
-            r = requests.post("https://www.binance.com/bapi/futures/v1/public/future/leaderboard/getOtherPosition",json={
-                "encryptedUid": uid,
-                "tradeType": "PERPETUAL"
-            })
+            r = requests.post(
+                "https://www.binance.com/bapi/futures/v1/public/future/leaderboard/getOtherPosition",
+                json={"encryptedUid": uid, "tradeType": "PERPETUAL"},
+            )
             assert r.status_code == 200
-            positions = r.json()['data']['otherPositionRetList']
-            times = r.json()['data']['updateTimeStamp']
+            positions = r.json()["data"]["otherPositionRetList"]
+            times = r.json()["data"]["updateTimeStamp"]
             assert positions is not None
             assert times is not None
         except Exception as e:
             logger.error(str(e))
             return "x"
-        output, _ = self.format_results(positions,times)
+        output, _ = self.format_results(positions, times)
         return output["data"]
