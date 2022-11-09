@@ -1,11 +1,8 @@
 import threading
-from tgb_db import dbOperations
-from tgb_handlers import tgHandlers
-from tgb_globals import tgGlobals
-import sys
-
-sys.path.append("/home/thomas/binance-copy-trade-bot/data")
-from credentials import bot_token, auth_code, admin_code
+from app.telegram_frontend.tgb_db import dbOperations
+from app.telegram_frontend.tgb_handlers import tgHandlers
+from app.telegram_frontend.tgb_globals import tgGlobals
+from app.data.credentials import bot_token, auth_code, admin_code
 from telegram.ext import Updater
 import logging
 

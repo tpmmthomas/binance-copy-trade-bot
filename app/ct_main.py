@@ -1,6 +1,6 @@
-from ct_db import ctDatabase
-from ct_globals import ctGlobal
-from ct_position import WebScraping
+from app.copy_trade_backend.ct_db import ctDatabase
+from app.copy_trade_backend.ct_globals import ctGlobal
+from app.copy_trade_backend.ct_position import WebScraping
 import logging
 import threading
 

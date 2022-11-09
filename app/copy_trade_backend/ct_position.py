@@ -1,9 +1,6 @@
 import threading
-from ct_bybit import BybitClient
-import sys
-
-sys.path.append("/home/thomas/binance-copy-trade-bot/config")
-from config import chrome_location, driver_location
+from app.copy_trade_backend.ct_bybit import BybitClient
+from app.config.config import chrome_location, driver_location
 import time
 import logging
 

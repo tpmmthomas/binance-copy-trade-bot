@@ -3,15 +3,12 @@ from datetime import time as timed
 import math
 import threading
 import logging
-from ct_bybit import BybitClient
+from app.copy_trade_backend.ct_bybit import BybitClient
 import time
 from pybit.usdt_perpetual import HTTP
 import pandas as pd
 import urllib.parse
-import sys
-
-sys.path.append("/home/thomas/binance-copy-trade-bot/data")
-from credentials import db_user, db_pw
+from app.data.credentials import db_user, db_pw
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO

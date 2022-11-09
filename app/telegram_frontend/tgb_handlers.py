@@ -17,13 +17,9 @@ from telegram.ext import (
     ConversationHandler,
 )
 from pybit.usdt_perpetual import HTTP
-from bs4 import BeautifulSoup
-from selenium import webdriver
 from datetime import datetime
 import requests
-import sys
-sys.path.append("/home/thomas/binance-copy-trade-bot/data")
-from credentials import ip
+from app.data.credentials import ip
 
 import logging
 
