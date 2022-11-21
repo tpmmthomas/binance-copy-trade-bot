@@ -1,0 +1,14 @@
+[Unit]
+Description=Binance Copy Trade Telegram Bot
+After=multi-user.target
+
+[Service]
+WorkingDirectory={! Replace with your own !}
+User=thomas
+Type=simple
+Restart=always
+RuntimeMaxSec=3600
+ExecStart=python3 -m app.tgb_main &> /dev/null
+
+[Install]
+WantedBy=multi-user.target
