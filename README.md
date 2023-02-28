@@ -27,7 +27,7 @@ Follow https://www.digitalocean.com/community/tutorials/how-to-secure-mongodb-on
 ### Software setup 
 1. Setup a telegram bot using `Botfather` (details on telegram official site) and mark the access token.
 2. Set commands of the bot in `Botfather` by copy and pasting the commands in `telegram-commands.txt`
-2. Fill in the required fields in  `app/data/credentials.py ` () 
+3. Fill in the required fields in  `app/data/credentials.py ` () 
 4. Run `python -m app.ct_main` and `python -m app.tgb_main`. It is suggested to set both up as a systemctl service, with restart=always and a MaxRunTime so that the program is automatically restarted from time to time. A template service file is located at `template.service`, that needs to be adjusted according to your runtime environment.
 
 ### Using the software
