@@ -145,10 +145,6 @@ def webhook_setup(config):
 
 
 def start():
-    print("Downloading required libraries...\n")
-    subprocess.run("pip install -r requirements.txt",
-                   stdout=subprocess.DEVNULL, shell=True)
-
     print("Welcome to the Binance Futures Discord bot!")
     print("First, we will need some details about your Discord bot. Can you please copy/paste your bot token?")
 
