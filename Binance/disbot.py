@@ -128,7 +128,7 @@ async def tpsl(ctx, *, arg):
         await ctx.send("❌ Oops, please enter a good value 'True' or 'False' !")
         return
     update_config("others-setting", "TPSL", arg)
-    await ctx.send("✅ TP/SL is now " + "activated !" if arg == "True" else "deactivated !")
+    await ctx.send("✅ TP/SL is now activated !" if arg == "True" else "✅ TP/SL is now deactivated !")
 
 
 @client.command()
