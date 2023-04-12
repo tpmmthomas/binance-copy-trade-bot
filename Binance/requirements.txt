@@ -1,0 +1,7 @@
+binance==0.3
+certifi==2022.12.7
+cryptography==39.0.0
+discord.py==2.2.2
+discord_webhook==1.1.0
+pymongo==4.3.3
+requests==2.28.1
