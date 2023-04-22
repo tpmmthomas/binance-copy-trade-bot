@@ -49,15 +49,15 @@ async def settings(ctx):
     fields = [
         ("MongoDB", "mongo-server", "url",
          "You need to set your MongoDB server url first !  `.mongourl [url]`"),
-        ("API KEY", "binance-setting", "api-key",
+        ("API KEY", "binance-settings", "api-key",
          "You need to set your Binance API key first !  `.apikey [key]`"),
-        ("API SECRET", "binance-setting", "api-secret",
+        ("API SECRET", "binance-settings", "api-secret",
          "You need to set your Binance API secret first !  `.apisecret [secret]`"),
-        ("Trading Mode", "others-setting", "mode",
+        ("Trading Mode", "other-settings", "mode",
          "You need to set your trading mode first !  `.mode [mode]`"),
-        ("Webhook", "others-setting", "webhook",
+        ("Webhook", "other-settings", "webhook",
          "You need to set your webhook !  `.webhook [id]`"),
-        ("Testnet", "others-setting", "testnet",
+        ("Testnet", "other-settings", "testnet",
          "You need to set your testnet mode first !  `.testnet [true or false]`"),
     ]
     embed = create_embed("Settings 🛠️", 0x4eb120)
@@ -86,6 +86,8 @@ async def setup(ctx):
                 ("🔹 See your FUTURES balance", "`.balance`"),
                 ("🔹 See your performances", "`.stats`"),
                 ("🔹 See your current trades", "`.current`"),
+                ("🔹 Set maximum simultaneous trades ",
+                 "`.maxtrades [number]`"),
                 ("🔹 Modify settings", "`.settings`"),
                 ("🔹 Stop the bot", "`.stop`")]
 
@@ -118,16 +120,25 @@ class TradersRemoveMenu(Select):
 
 
 @client.command()
+async def maxtrades(ctx, *, arg):
+    if not arg.isnumeric():
+        await ctx.send("❌ Oops, please enter a good value !")
+        return
+    update_config("other-settings", "maxtrades", arg)
+    await ctx.send(f"✅ Maximum simultaneous trades is now {arg} !")
+
+
+@client.command()
 async def tpsl(ctx, *, arg):
-    tp_percent = config_get("others-setting", "TP")
-    sl_percent = config_get("others-setting", "SL")
+    tp_percent = config_get("other-settings", "TP")
+    sl_percent = config_get("other-settings", "SL")
     if not tp_percent or not sl_percent:
         await ctx.send("❌ Oops, you need to set your TP and SL first !")
         return
     if arg not in ["True", "False"]:
         await ctx.send("❌ Oops, please enter a good value 'True' or 'False' !")
         return
-    update_config("others-setting", "TPSL", arg)
+    update_config("other-settings", "TPSL", arg)
     await ctx.send("✅ TP/SL is now activated !" if arg == "True" else "✅ TP/SL is now deactivated !")
 
 
@@ -149,7 +160,7 @@ async def delete(ctx):
 
 @client.command()
 async def stop(ctx):
-    await ctx.send("Bot is stopping, you will need to restart it manually.")
+    await ctx.send("❌ Bot is stopping, you will need to restart it manually.")
     await client.close()
 
 
@@ -245,8 +256,8 @@ async def balance(ctx):
 @client.command()
 async def dLeverage(ctx, *, arg):
     if is_valid_number(arg):
-        update_config('others-setting', 'default-leverage', arg)
-        await ctx.send(f"Default leverage set to {arg}!")
+        update_config('other-settings', 'default-leverage', arg)
+        await ctx.send(f" ✅ Default leverage set to {arg}!")
     else:
         await ctx.send("❌ Oops, please enter a good value !")
 
@@ -254,8 +265,8 @@ async def dLeverage(ctx, *, arg):
 @client.command()
 async def tp(ctx, *, arg):
     if is_valid_number(arg):
-        update_config('others-setting', 'tp', arg)
-        await ctx.send(f"TP set to {arg}%!")
+        update_config('other-settings', 'tp', arg)
+        await ctx.send(f"✅ TP set to {arg}%!")
     else:
         await ctx.send("❌ Oops, please enter a good value !")
 
@@ -263,22 +274,22 @@ async def tp(ctx, *, arg):
 @client.command()
 async def sl(ctx, *, arg):
     if is_valid_number(arg):
-        update_config('others-setting', 'sl', arg)
-        await ctx.send(f"SL set to {arg}%!")
+        update_config('other-settings', 'sl', arg)
+        await ctx.send(f"✅ SL set to {arg}%!")
     else:
         await ctx.send("❌ Oops, please enter a good value !")
 
 
 @client.command()
 async def mongourl(ctx, *, arg):
-    update_config('others-setting', 'mongo-url', arg)
+    update_config('other-settings', 'mongo-url', arg)
     await ctx.send("✅ MongoDB server url set !")
 
 
 @client.command()
 async def setPercent(ctx, *, arg):
     if is_valid_number(arg) and 1 <= int(arg) <= 100:
-        update_config('others-setting', 'percent', arg)
+        update_config('other-settings', 'percent', arg)
         await ctx.send(f"✅ Percent set to {arg}%!")
     else:
         await ctx.send("❌ Oops, please enter a good value !")
@@ -296,7 +307,7 @@ async def add(ctx, *, arg):
 
 
 async def update_setting(ctx, key, value):
-    update_config('binance-setting', key, value)
+    update_config('binance-settings', key, value)
     await ctx.send(f"✅ Binance {key.replace('-', ' ')} set!")
 
 
@@ -312,18 +323,18 @@ async def apisecret(ctx, *, arg):
 
 @client.command()
 async def mode(ctx, *, arg):
-    update_config('others-setting', 'mode', arg)
+    update_config('other-settings', 'mode', arg)
     await ctx.send(f"✅ Trading mode set to: {arg}!")
 
 
 @client.command()
 async def testnet(ctx, *, arg):
-    update_config('others-setting', 'testnet', arg)
+    update_config('other-settings', 'testnet', arg)
     await ctx.send("✅ Testnet mode set!")
 
 
 def webhook_start(title, side, symbol, orderid, quantity, leverage, entryPrice, color):
-    webhook_url = config_get('others-setting', 'webhook')
+    webhook_url = config_get('other-settings', 'webhook')
     webhook = DiscordWebhook(url=webhook_url)
     embed = DiscordEmbed(title=title, color=color)
     embed.set_footer(text='Binance Trade Bot',
@@ -338,7 +349,7 @@ def webhook_start(title, side, symbol, orderid, quantity, leverage, entryPrice, 
 
 
 def webhook_end(title, symbol, leverage, entryPrice, exitPrice, data, color):
-    webhook_url = config_get('others-setting', 'webhook')
+    webhook_url = config_get('other-settings', 'webhook')
     entryPrice = round(float(entryPrice), 2)
     exitPrice = round(float(exitPrice), 2)
     webhook = DiscordWebhook(url=webhook_url)
@@ -357,7 +368,7 @@ def webhook_end(title, symbol, leverage, entryPrice, exitPrice, data, color):
 def get_webhook_url():
     config = configparser.ConfigParser()
     config.read('config.ini')
-    return config['others-setting']['webhook']
+    return config['other-settings']['webhook']
 
 
 def webhook_infos(title, side, symbol, orderid, quantity, leverage, percent, color):

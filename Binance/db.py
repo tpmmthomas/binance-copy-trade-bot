@@ -72,7 +72,6 @@ def deleteTraders(values):
 def updateNew():
     cursor = followedTraders.find({})
     if not cursor:
-        #print("Oops, you don't have any traders yet!")
         pass
 
     for uid in cursor:
@@ -141,23 +140,29 @@ def add_new_trade(trade, nickName, existingTrades):
     type = "buy" if trade['amount'] > 0 else "sell"
     existingTrades.append(trade)
     print(f"new trade detected: {trade['symbol']} for {nickName}")
+    n = followedTrades.find({})
+    number_of_threads = len(list(n.clone()))
 
-    trade_followed = bparser.create_trade(trade, nickName)
 
-    try:
-        followedTrades.insert_one(
-            {
-                "Trader": nickName,
-                "symbol": trade_followed['symbol'],
-                "amount": -float(trade_followed['origQty']) if type == "sell" else float(trade_followed['origQty']),
-                "type": type,
-            }
-        )
-    except Exception as e:
-        print(e)
+    if int(config['other-settings']['maxtrades']) == -1 or number_of_threads <= int(config['other-settings']['maxtrades']):
+
+        trade_followed = bparser.create_trade(trade, nickName)
+
+        try:
+            followedTrades.insert_one(
+                {
+                    "Trader": nickName,
+                    "symbol": trade_followed['symbol'],
+                    "amount": -float(trade_followed['origQty']) if type == "sell" else float(trade_followed['origQty']),
+                    "type": type,
+                }
+            )
+        except Exception as e:
+            pass
 
 
 def update_trade(trade, existingTrade, nickName):
+    tmode = config["other-settings"]["mode"]
     symbol = trade['symbol']
     qty = followedTrades.find_one({"symbol": symbol, "Trader": nickName})
 
@@ -166,14 +171,18 @@ def update_trade(trade, existingTrade, nickName):
         percent = abs(diff) / abs(existingTrade['amount']) * 100
         amount = float(qty['amount']) * percent / 100
 
-        if amount != 0:
-            resp = bparser.margin_update(trade, amount, 0 if abs(trade['amount']) < abs(
-                existingTrade['amount']) else 1, 1 if trade['amount'] > 0 else 0, nickName, percent)
+        if int(tmode) == 3:
 
-            followedTrades.find_one_and_update(
-                {"symbol": symbol},
-                {"$set": {"amount": float(resp)}}
-            )
+            if amount != 0 :
+                resp = bparser.margin_update(trade, amount, 0 if abs(trade['amount']) < abs(
+                    existingTrade['amount']) else 1, 1 if trade['amount'] > 0 else 0, nickName, percent)
+
+                followedTrades.find_one_and_update(
+                    {"symbol": symbol},
+                    {"$set": {"amount": float(resp)}}
+                )
+            else:
+                close_existing_trades({symbol}, followedTrades.find({}), nickName)
         else:
             close_existing_trades({symbol}, followedTrades.find({}), nickName)
 

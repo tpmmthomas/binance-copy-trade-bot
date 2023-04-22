@@ -5,6 +5,8 @@ import requests
 import subprocess
 import pymongo
 import certifi
+from getpass import getpass
+
 
 from binance.client import Client
 from cryptography.fernet import Fernet
@@ -58,7 +60,7 @@ def check_token(token):
 def check_config(config):
     required_options = {
         'mongo-server': ['url'],
-        'binance-setting': ['api-key', 'api-secret', 'mode', 'testnet'],
+        'binance-settings': ['api-key', 'api-secret', 'mode', 'testnet'],
         'chanel-setting': ['chanel-id'],
     }
 
@@ -77,7 +79,7 @@ def config_setup():
     config['mongo-server'] = {
         'url': '',
     }
-    config['binance-setting'] = {
+    config['binance-settings'] = {
         'api-key': '',
         'api-key-salt': '',
         'api-secret': '',
@@ -86,7 +88,7 @@ def config_setup():
     config['discord-token'] = {
         'token': '',
     }
-    config['others-setting'] = {
+    config['other-settings'] = {
         'webhook': '',
         'percent': '',
         'testnet': '',
@@ -95,6 +97,7 @@ def config_setup():
         'SL': '',
         'TP': '',
         'TPSL': '',
+        'maxtrades': -1,
     }
     with open('config.ini', 'w') as configfile:
         config.write(configfile)
@@ -124,7 +127,7 @@ def api_setup(config):
     encrypted_secret, salt_secret = save_to_file(passwd, api_secret)
 
     with open("config.ini", "w") as configfile:
-        config["binance-setting"] = {"api-key-salt": salt, "api-key": encrypted_data,
+        config["binance-settings"] = {"api-key-salt": salt, "api-key": encrypted_data,
                                      "api-secret-salt": salt_secret, "api-secret": encrypted_secret}
         config["mongo-server"] = {"url": str(url)}
         config.write(configfile)
@@ -140,7 +143,7 @@ def webhook_setup(config):
     webhook = api_input(
         "Please copy/paste your webhook URL from Discord.\n>> ")
     with open("config.ini", "w") as configfile:
-        config["others-setting"] = {"webhook": str(webhook)}
+        config["other-settings"] = {"webhook": str(webhook)}
         config.write(configfile)
 
 
@@ -166,18 +169,18 @@ def start():
 
 def unlock():
     print("Please enter your password to unlock the bot.")
-    passwd = password_input(">> ")
+    passwd = getpass(">> ")
 
     try:
         api_key = encrypt_decrypt_helper(passwd.encode(), eval(
-            config['binance-setting']['api-key']), eval(config['binance-setting']['api-key-salt']), mode='decrypt')
+            config['binance-settings']['api-key']), eval(config['binance-settings']['api-key-salt']), mode='decrypt')
         api_secret = encrypt_decrypt_helper(passwd.encode(), eval(
-            config['binance-setting']['api-secret']), eval(config['binance-setting']['api-secret-salt']), mode='decrypt')
+            config['binance-settings']['api-secret']), eval(config['binance-settings']['api-secret-salt']), mode='decrypt')
         global client
         client = Client(api_key, api_secret)
         print("Bot unlocked!")
 
-    except:
+    except Exception as e:
         print("Wrong password, please try again!\n")
         unlock()
 

@@ -5,6 +5,10 @@ import disbot
 import datetime
 
 
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+
 def isLeverageValid(symbol, leverage):
     bracket = client.futures_leverage_bracket(symbol=symbol)
     return any(bracketInfo['initialLeverage'] > int(leverage) for bracketInfo in bracket[0]["brackets"])
@@ -28,15 +32,13 @@ def aBalance():
 
 
 def leverage(trade):
-    config = configparser.ConfigParser()
-    config.read('config.ini')
-    mode = config['others-setting']['mode']
+    mode = config['other-settings']['mode']
 
     lev = db.getLeverage(trade['symbol'])
     if lev != 0 and mode == str(1):
         return lev
-    elif mode == str(2):
-        dLeverage = config['others-setting']['default-leverage']
+    elif mode == str(2) or mode == str(3):
+        dLeverage = config['other-settings']['default-leverage']
         return int(dLeverage)
     else:
         return trade['leverage']
@@ -83,7 +85,7 @@ def round_tick(amount, symbol):
 def setQty(trade, leverage):
     config = configparser.ConfigParser()
     config.read('config.ini')
-    percent = int(config['others-setting']['percent'])
+    percent = int(config['other-settings']['percent'])
     tick_info = client.futures_exchange_info()
     symbol_info = next(
         info for info in tick_info["symbols"] if info["symbol"] == trade['symbol'])
@@ -176,7 +178,6 @@ def close_position_market_price(tSymbol, nickname, side):
                 position_info[0]["unRealizedProfit"]) < 0 else "42f5b9"
         )
     except Exception as e:
-        print(e)
         disbot.webhook_error("Order not cancelled", symbol)
 
 
@@ -230,9 +231,9 @@ def create_trade(trade, nickname):
     config = configparser.ConfigParser()
     config.read('config.ini')
 
-    if config['others-setting']['TP'] != "0" and config['others-setting']['SL'] != "0" and config['others-setting']['TPSL'] == "True":
-        tp_percent = float(config['others-setting']['TP'])
-        sl_percent = float(config['others-setting']['SL'])
+    if config['other-settings']['TP'] != "0" and config['other-settings']['SL'] != "0" and config['other-settings']['TPSL'] == "True":
+        tp_percent = float(config['other-settings']['TP'])
+        sl_percent = float(config['other-settings']['SL'])
 
         tp, sl = set_tp_sl(trade, tp_percent, sl_percent, leveragee)
 
@@ -258,9 +259,9 @@ def create_trade(trade, nickname):
         disbot.webhook_start("♻️ New Followed Trade : " + nickname, side,
                              trade['symbol'], response["orderId"], response["origQty"], leveragee, trade['entryPrice'], "FFDEAD")
 
-        if config['others-setting']['TP'] != "0" and config['others-setting']['SL'] != "0" and config['others-setting']['TPSL'] == "True":
-            tp_percent = float(config['others-setting']['TP'])
-            sl_percent = float(config['others-setting']['SL'])
+        if config['other-settings']['TP'] != "0" and config['other-settings']['SL'] != "0" and config['other-settings']['TPSL'] == "True":
+            tp_percent = float(config['other-settings']['TP'])
+            sl_percent = float(config['other-settings']['SL'])
 
             tp, sl = set_tp_sl(trade, tp_percent, sl_percent, leveragee)
             TpSl(trade, quantity, tp, sl)
@@ -324,5 +325,11 @@ def handle_error(e, trade):
     elif str(e) == "APIError(code=-2021): Order would immediately trigger.":
         disbot.webhook_error(
             "Order would immediately trigger", trade['symbol'])
+    elif str(e) == "APIError(code=-4164): Order's notional must be no smaller than 5.0 (unless you choose reduce only)":
+        disbot.webhook_error(
+            "Order's notional must be no smaller than 5.0", trade['symbol'])
+    elif str(e) == "APIError(code=-4003): Quantity less than or equal to zero.":
+        disbot.webhook_error(
+            "Quantity less than or equal to zero.", trade['symbol'])
     else:
         print(e)
