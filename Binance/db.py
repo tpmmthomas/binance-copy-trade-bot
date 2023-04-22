@@ -6,6 +6,7 @@ import certifi
 import bparser
 from time import sleep
 
+
 ca = certifi.where()
 
 config = configparser.ConfigParser()
@@ -69,8 +70,22 @@ def deleteTraders(values):
         return "Oops ! Something went wrong."
 
 
+def myTrades():
+    cursor = followedTrades.find({})
+    for trade in cursor:
+        trades = client.futures_account_trades(symbol=trade['symbol'])
+        position_amt = float(trades[0]['positionAmt'])
+        if position_amt == 0:
+            followedTrades.find_one_and_delete({"symbol": trade['symbol']})
+        else:
+            pass
+
+
 def updateNew():
+    global client
+    from assist import client
     cursor = followedTraders.find({})
+    myTrades()
     if not cursor:
         pass
 
@@ -143,7 +158,6 @@ def add_new_trade(trade, nickName, existingTrades):
     n = followedTrades.find({})
     number_of_threads = len(list(n.clone()))
 
-
     if int(config['other-settings']['maxtrades']) == -1 or number_of_threads <= int(config['other-settings']['maxtrades']):
 
         trade_followed = bparser.create_trade(trade, nickName)
@@ -171,18 +185,14 @@ def update_trade(trade, existingTrade, nickName):
         percent = abs(diff) / abs(existingTrade['amount']) * 100
         amount = float(qty['amount']) * percent / 100
 
-        if int(tmode) == 3:
+        if amount != 0 and int(tmode) == 1 or int(tmode) == 2:
+            resp = bparser.margin_update(trade, amount, 0 if abs(trade['amount']) < abs(
+                existingTrade['amount']) else 1, 1 if trade['amount'] > 0 else 0, nickName, percent)
 
-            if amount != 0 :
-                resp = bparser.margin_update(trade, amount, 0 if abs(trade['amount']) < abs(
-                    existingTrade['amount']) else 1, 1 if trade['amount'] > 0 else 0, nickName, percent)
-
-                followedTrades.find_one_and_update(
-                    {"symbol": symbol},
-                    {"$set": {"amount": float(resp)}}
-                )
-            else:
-                close_existing_trades({symbol}, followedTrades.find({}), nickName)
+            followedTrades.find_one_and_update(
+                {"symbol": symbol},
+                {"$set": {"amount": float(resp)}}
+            )
         else:
             close_existing_trades({symbol}, followedTrades.find({}), nickName)
 
