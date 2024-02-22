@@ -10,7 +10,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 import threading
-from pybit.usdt_perpetual import HTTP
+from pybit.unified_trading import HTTP
 
 
 class BybitClient:
@@ -18,11 +18,12 @@ class BybitClient:
         self, chat_id, uname, safety_ratio, api_key, api_secret, slippage, glb, udb
     ):
         self.client = HTTP(
-            "https://api.bybit.com",
+            testnet=False,
             api_key=api_key,
             api_secret=api_secret,
-            request_timeout=40,
-        )  # bybit.bybit(test=False, api_key=api_key, api_secret=api_secret)
+        )
+        self.globals = glb
+        self.userdb = udb
         self.api_key = api_key
         self.chat_id = chat_id
         self.uname = uname
@@ -30,18 +31,14 @@ class BybitClient:
         self.ticksize = {}
         self.safety_ratio = safety_ratio
         self.isReloaded = False
-        res = self.client.query_symbol()
-        for symbol in res["result"]:
-            # if symbol["name"] not in ["BTCUSDT", "ETHUSDT"]:
-            #     continue
-            self.ticksize[symbol["name"]] = round(
-                -math.log(float(symbol["price_filter"]["tick_size"]), 10)
+        res = self.client.get_instruments_info(category="linear")
+        for symbol in res["result"]["list"]:
+            self.ticksize[symbol["symbol"]] = round(
+                -math.log(float(symbol["priceFilter"]["tickSize"]), 10)
             )
-            self.stepsize[symbol["name"]] = round(
-                -math.log(float(symbol["lot_size_filter"]["qty_step"]), 10)
+            self.stepsize[symbol["symbol"]] = round(
+                -math.log(float(symbol["lotSizeFilter"]["qtyStep"]), 10)
             )
-        self.globals = glb
-        self.userdb = udb
 
     def get_latest_price(self, symbol):
         return self.globals.calculated_price[symbol]
@@ -51,74 +48,6 @@ class BybitClient:
         for symbol in self.stepsize:
             symbolList.append(symbol)
         return symbolList
-
-    def tpsl_trade(
-        self, symbol, side, qty, excprice, leverage, tp, sl, skey
-    ):  # make sure everything in numbers not text//side: original side
-        logger.info(f"Debug Check {leverage}/{tp}/{sl}")
-        if side == "Buy":
-            if tp != -1:
-                tpPrice1 = excprice * (1 + (tp / leverage) / 100)
-                qty1 = "{:0.0{}f}".format(qty, self.stepsize[symbol])
-                tpPrice1 = "{:0.0{}f}".format(tpPrice1, self.ticksize[symbol])
-                try:
-                    result = self.client.set_trading_stop(
-                        symbol=symbol,
-                        take_profit=float(tpPrice1),
-                        tp_trigger_by="MarkPrice",
-                        tp_size=float(qty1),
-                    )
-                    if result["ret_msg"] != "OK":
-                        logger.error(f"Error in tpsl: {result['ret_msg']}")
-                except:
-                    logger.error("some error again")
-            if sl != -1:
-                tpPrice2 = excprice * (1 - (sl / leverage) / 100)
-                qty2 = "{:0.0{}f}".format(qty, self.stepsize[symbol])
-                tpPrice2 = "{:0.0{}f}".format(tpPrice2, self.ticksize[symbol])
-                try:
-                    result = self.client.set_trading_stop(
-                        symbol=symbol,
-                        stop_loss=float(tpPrice2),
-                        sl_trigger_by="MarkPrice",
-                        sl_size=float(qty2),
-                    )
-                    if result["ret_msg"] != "OK":
-                        logger.error(f"Error in tpsl: {result['ret_msg']}")
-                except:
-                    logger.error("SL error")
-        else:
-            if tp != -1:
-                tpPrice1 = excprice * (1 - (tp / leverage) / 100)
-                qty1 = "{:0.0{}f}".format(qty, self.stepsize[symbol])
-                tpPrice1 = "{:0.0{}f}".format(tpPrice1, self.ticksize[symbol])
-                try:
-                    result = self.client.set_trading_stop(
-                        symbol=symbol,
-                        take_profit=float(tpPrice1),
-                        tp_trigger_by="MarkPrice",
-                        tp_size=float(qty1),
-                    )
-                    if result["ret_msg"] != "OK":
-                        logger.error(f"Error in tpsl: {result['ret_msg']}")
-                except:
-                    logger.error("some error again")
-            if sl != -1:
-                tpPrice2 = excprice * (1 + (sl / leverage) / 100)
-                qty2 = "{:0.0{}f}".format(qty, self.stepsize[symbol])
-                tpPrice2 = "{:0.0{}f}".format(tpPrice2, self.ticksize[symbol])
-                try:
-                    result = self.client.set_trading_stop(
-                        symbol=symbol,
-                        stop_loss=float(tpPrice2),
-                        sl_trigger_by="MarkPrice",
-                        sl_size=float(qty2),
-                    )
-                    if result["ret_msg"] != "OK":
-                        logger.error(f"Error in tpsl: {result['ret_msg']}")
-                except:
-                    logger.error("SL error")
-        return
 
     def query_trade(
         self,
@@ -133,7 +62,7 @@ class BybitClient:
         positionSide,
         ref_price,
         uid,
-        todelete
+        todelete,
     ):  # ONLY to be run as thread
         numTries = 0
         time.sleep(1)
@@ -141,15 +70,24 @@ class BybitClient:
         executed_qty = 0
         while True:
             try:
-                result = self.client.query_active_order(symbol=symbol, order_id=orderId)
-                if result["ret_msg"] != "OK":
+                result = self.client.get_open_orders(
+                    category="linear", symbol=symbol, orderId=orderId
+                )
+                logger.info(f"Result {result} // orderId {orderId} // symbol {symbol}")
+                if result["retMsg"] != "OK":
                     logger.error("There is an error!")
                     return
-                result = result["result"]
-                if result["order_status"] == "Filled":
+                result = result["result"]["list"]
+                if len(result) == 0:
+                    logger.info(f"Result is empty for orderId {orderId}.")
+                    time.sleep(1)
+                    continue
+                else:
+                    result = result[0]
+                if result["orderStatus"] == "Filled":
                     if ref_price != -1:
-                        executed_price = float(result["last_exec_price"])
-                        diff = abs(executed_price - ref_price)
+                        executed_price = float(result["avgPrice"])
+                        diff = executed_price - ref_price
                         slippage = diff / ref_price * 100
                         self.userdb.insert_command(
                             {
@@ -168,44 +106,23 @@ class BybitClient:
                         )
                     if todelete:
                         return
-                    resultqty = round(abs(float(result["cum_exec_qty"])), 3)
+                    resultqty = round(abs(float(result["cumExecQty"])), 3)
                     resultqty = -resultqty if positionSide == "SHORT" else resultqty
                     # ADD TO POSITION
                     if isOpen:
-                        resultqty = round(abs(float(result["cum_exec_qty"])), 3)
+                        resultqty = round(abs(float(result["cumExecQty"])), 3)
                         resultqty = -resultqty if positionSide == "SHORT" else resultqty
                         self.userdb.update_positions(
                             self.chat_id, uid, positionKey, resultqty, 1
                         )
-                        try:
-                            self.tpsl_trade(
-                                symbol,
-                                result["side"],
-                                float(result["cum_exec_qty"]),
-                                float(result["last_exec_price"]),
-                                Leverage,
-                                takeProfit,
-                                stopLoss,
-                                positionKey,
-                            )
-                        except:
-                            pass
                     else:
-                        resultqty = round(abs(float(result["cum_exec_qty"])), 3)
+                        resultqty = round(abs(float(result["cumExecQty"])), 3)
                         resultqty = -resultqty if positionSide == "SHORT" else resultqty
                         self.userdb.update_positions(
                             self.chat_id, uid, positionKey, resultqty, 2
                         )
-                        # check positions thenn close all
-                        # res = self.client.my_position(symbol=symbol)
-                        # checkside = "Buy" if result["side"] == "Sell" else "Sell"
-                        # for pos in res["result"]:
-                        #     if pos["side"] == checkside and float(pos["size"]) == 0:
-                        #         self.userdb.update_positions(
-                        #             self.chat_id, subacc, positionKey, 0, 0
-                        #         )
                     return
-                elif result["order_status"] in [
+                elif result["orderStatus"] in [
                     "Rejected",
                     "PendingCancel",
                     "Cancelled",
@@ -218,8 +135,8 @@ class BybitClient:
                         }
                     )
                     return
-                elif result["order_status"] == "PartiallyFilled":
-                    updatedQty = float(result["cum_exec_qty"]) - executed_qty
+                elif result["orderStatus"] == "PartiallyFilled":
+                    updatedQty = float(result["cumExecQty"]) - executed_qty
                     updatedQty = -updatedQty if positionSide == "SHORT" else updatedQty
                     if todelete:
                         continue
@@ -231,16 +148,15 @@ class BybitClient:
                         self.userdb.update_positions(
                             self.chat_id, uid, positionKey, resultqty, 2
                         )
-                    executed_qty = float(result["cum_exec_qty"])
+                    executed_qty = float(result["cumExecQty"])
             except Exception as e:
-                logger.error("eeerrroooorrr")
-                logger.error(str(e))
+                logger.error(f"Error in Query trade: {e}")
                 pass
             if numTries >= 15:
                 break
             time.sleep(60)
             numTries += 1
-        if result != "" and result["order_status"] == "PartiallyFilled":
+        if result != "" and result["orderStatus"] == "PartiallyFilled":
             self.userdb.insert_command(
                 {
                     "cmd": "send_message",
@@ -249,16 +165,8 @@ class BybitClient:
                 }
             )
             try:
-                self.client.cancel_active_order(symbol=symbol, order_id=orderId)
-                self.tpsl_trade(
-                    symbol,
-                    result["side"],
-                    float(result["cum_exec_qty"]),
-                    float(result["last_exec_price"]),
-                    Leverage,
-                    takeProfit,
-                    stopLoss,
-                    positionKey,
+                self.client.cancel_order(
+                    category="linear", symbol=symbol, order_id=orderId
                 )
             except:
                 pass
@@ -272,20 +180,25 @@ class BybitClient:
                 }
             )
             try:
-                self.client.cancel_active_order(symbol=symbol, order_id=orderId)
+                self.client.cancel_order(
+                    category="linear", symbol=symbol, order_id=orderId
+                )
             except:
                 pass
 
+    def check_uta(self):
+        try:
+            res = self.client.get_account_info()
+            res = res["result"]["unifiedMarginStatus"]
+            if res == 3 or res == 4:
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Check UTA {e}")
+        return False
+
     def open_trade(
-        self,
-        df,
-        uid,
-        proportion,
-        leverage,
-        tmodes,
-        positions,
-        slippage,
-        todelete = False
+        self, df, uid, proportion, leverage, tmodes, positions, slippage, todelete=False
     ):
         # logger.info("DEBUGx\n" + df.to_string())
         df = df.values
@@ -306,12 +219,20 @@ class BybitClient:
                 continue
             try:
                 coin = "USDT"
-                res = self.client.get_wallet_balance(coin=coin)["result"]["USDT"]
-                balance = res["available_balance"]
-            except:
+                if self.check_uta():
+                    res = self.client.get_wallet_balance(accountType="UNIFIED")[
+                        "result"
+                    ]["list"][0]
+                    balance = res["totalAvailableBalance"]
+                else:
+                    res = self.client.get_wallet_balance(
+                        accountType="CONTRACT", coin=coin
+                    )["result"]["list"][0]["coin"][0]
+                    balance = res["availableToWithdraw"]
+            except Exception as e:
                 coin = "USDT"
                 balance = "0"
-                logger.error("Cannot retrieve balance.")
+                logger.error(f"Cannot retrieve balance. {e}")
             balance = float(balance)
             if types[:4] == "OPEN":
                 isOpen = True
@@ -322,7 +243,10 @@ class BybitClient:
                     side = "Sell"
                 try:
                     self.client.set_leverage(
-                        symbol=tradeinfo[1], buy_leverage=leverage[tradeinfo[1]],sell_leverage=leverage[tradeinfo[1]]
+                        category="linear",
+                        symbol=tradeinfo[1],
+                        buyLeverage=str(leverage[tradeinfo[1]]),
+                        sellLeverage=str(leverage[tradeinfo[1]]),
                     )
                 except Exception as e:
                     logger.error(f"Leverage error {str(e)}")
@@ -333,6 +257,13 @@ class BybitClient:
                     side = "Sell"
                 else:
                     side = "Buy"
+            try:
+                res = self.client.switch_position_mode(
+                    category="linear", coin="USDT", mode=3
+                )
+                logger.info(f"Check position moode {res}")
+            except:
+                logger.error(f"error in position mode switch!!!! Check {self.api_key}")
             checkKey = tradeinfo[1] + positionSide
             quant = abs(float(tradeinfo[2])) * proportion[tradeinfo[1]]
             if not isOpen and (
@@ -355,13 +286,9 @@ class BybitClient:
                     }
                 )
                 continue
-            latest_price = float(
-                self.client.latest_information_for_symbol(symbol=tradeinfo[1])[
-                    "result"
-                ][0]["mark_price"]
-            )
-            if isinstance(tradeinfo[3],str):
-                exec_price = float(tradeinfo[3].replace(",",""))
+            latest_price = self.globals.get_latest_price(tradeinfo[1])
+            if isinstance(tradeinfo[3], str):
+                exec_price = float(tradeinfo[3].replace(",", ""))
             else:
                 exec_price = float(tradeinfo[3])
             if abs(latest_price - exec_price) / exec_price > slippage and isOpen:
@@ -398,7 +325,7 @@ class BybitClient:
                         }
                     )
                     continue
-            if tmodes[tradeinfo[1]] == 0 or (tmodes[tradeinfo[1]] == 2 and not isOpen):
+            if True:
                 try:
                     tosend = f"Trying to execute the following trade:\nSymbol: {tradeinfo[1]}\nSide: {side}\npositionSide: {positionSide}\ntype: MARKET\nquantity: {quant}"
                     self.userdb.insert_command(
@@ -409,37 +336,39 @@ class BybitClient:
                         }
                     )
                     if isOpen:
-                        response = self.client.place_active_order(
+                        response = self.client.place_order(
+                            category="linear",
                             side=side,
                             symbol=tradeinfo[1],
                             order_type="Market",
                             qty=quant,
-                            time_in_force="GoodTillCancel",
+                            positionIdx=self.globals.getIdx(side, isOpen),
                             reduce_only=False,
                             close_on_trigger=False,
                         )
                     else:
-                        response = self.client.place_active_order(
+                        response = self.client.place_order(
+                            category="linear",
                             side=side,
                             symbol=tradeinfo[1],
                             order_type="Market",
                             qty=quant,
-                            time_in_force="GoodTillCancel",
+                            positionIdx=self.globals.getIdx(side, isOpen),
                             reduce_only=True,
                             close_on_trigger=True,
                         )
-                    if response["ret_msg"] == "OK":
+                    if response["retMsg"] == "OK":
                         logger.info(f"{self.uname} opened order.")
                     else:
-                        logger.error(f"Error: {response['ret_msg']}")
+                        logger.error(f"Error: {response['retMsg']}")
                         self.userdb.insert_command(
                             {
                                 "cmd": "send_message",
                                 "chat_id": self.chat_id,
-                                "message": f"Error: {response['ret_msg']}",
+                                "message": f"Error: {response['retMsg']}",
                             }
                         )
-                        retmsg = response["ret_msg"]
+                        retmsg = response["retMsg"]
                         if retmsg.find("reduce-only") != -1:
                             self.userdb.update_positions(
                                 self.chat_id, uid, checkKey, 0, 0
@@ -448,7 +377,7 @@ class BybitClient:
                     t1 = threading.Thread(
                         target=self.query_trade,
                         args=(
-                            response["result"]["order_id"],
+                            response["result"]["orderId"],
                             tradeinfo[1],
                             checkKey,
                             isOpen,
@@ -459,16 +388,14 @@ class BybitClient:
                             positionSide,
                             -1,
                             uid,
-                            todelete
+                            todelete,
                         ),
                     )
                     t1.start()
                 except Exception as e:
                     logger.error(str(e))
                     if str(e).find("reduce-only") != -1:
-                        self.userdb.update_positions(
-                                self.chat_id, uid, checkKey, 0, 0
-                            )
+                        self.userdb.update_positions(self.chat_id, uid, checkKey, 0, 0)
                         self.userdb.insert_command(
                             {
                                 "cmd": "send_message",
@@ -476,69 +403,9 @@ class BybitClient:
                                 "message": "Your opened position is 0, no positions has been closed.",
                             }
                         )
-                    logger.error("Error in processing request during trade opening.")
-            else:
-                if isinstance(tradeinfo[3], str):
-                    tradeinfo[3] = tradeinfo[3].replace(",", "")
-                target_price = float(tradeinfo[3])
-                target_price = "{:0.0{}f}".format(target_price, reqticksize)
-                try:
-                    tosend = f"Trying to execute the following trade:\nSymbol: {tradeinfo[1]}\nSide: {side}\ntype: LIMIT\nquantity: {quant}\nPrice: {target_price}"
-                    self.userdb.insert_command(
-                        {
-                            "cmd": "send_message",
-                            "chat_id": self.chat_id,
-                            "message": tosend,
-                        }
+                    logger.error(
+                        f"Error in processing request during trade opening. {e}"
                     )
-                    if isOpen:
-                        response = self.client.place_active_order(
-                            side=side,
-                            symbol=tradeinfo[1],
-                            order_type="Limit",
-                            qty=quant,
-                            price=target_price,
-                            time_in_force="GoodTillCancel",
-                            reduce_only=False,
-                            close_on_trigger=False,
-                        )
-                    else:
-                        response = self.client.place_active_order(
-                            side=side,
-                            symbol=tradeinfo[1],
-                            order_type="Limit",
-                            qty=quant,
-                            price=target_price,
-                            time_in_force="GoodTillCancel",
-                            reduce_only=True,
-                            close_on_trigger=True,
-                        )
-                    if response["ret_msg"] == "OK":
-                        logger.info(f"{self.uname} opened order.")
-                    else:
-                        logger.error(f"Error: {response['ret_msg']}")
-                        continue
-                    t1 = threading.Thread(
-                        target=self.query_trade,
-                        args=(
-                            response["result"]["order_id"],
-                            tradeinfo[1],
-                            checkKey,
-                            isOpen,
-                            self.uname,
-                            -1,
-                            -1,
-                            leverage[tradeinfo[1]],
-                            positionSide,
-                            -1,
-                            uid,
-                            todelete
-                        ),
-                    )
-                    t1.start()
-                except Exception as e:
-                    logger.error("have error!!")
-                    logger.info(str(e))
 
     def get_positions(self):
         try:

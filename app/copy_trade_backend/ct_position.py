@@ -1,6 +1,7 @@
 import threading
 from app.copy_trade_backend.ct_bybit import BybitClient
-from app.config.config import chrome_location, driver_location
+from app.data.credentials import headers
+from io import StringIO
 import time
 import logging
 
@@ -9,10 +10,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 import pandas as pd
-from selenium import webdriver
-from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import requests
+
 
 class WebScraping(threading.Thread):
     def __init__(self, globals, userdb):
@@ -26,10 +26,9 @@ class WebScraping(threading.Thread):
         self.changeNotiTime = {}
         self.num_no_data = {}
         self.error = {}
-        # self.thislock = threading.Lock()
 
     @staticmethod
-    def format_results(poslist,times):
+    def format_results(poslist, times):
         symbol = []
         size = []
         entry_price = []
@@ -37,29 +36,17 @@ class WebScraping(threading.Thread):
         pnl = []
         margin = []
         calculatedMargin = []
-        times =  datetime.utcfromtimestamp(times/1000).strftime('%Y-%m-%d %H:%M:%S')
+        marginList = dict()
+        times = datetime.utcfromtimestamp(times / 1000).strftime("%Y-%m-%d %H:%M:%S")
         for dt in poslist:
-            symbol.append(dt['symbol'])
-            size.append(dt['amount'])
-            entry_price.append(dt['entryPrice'])
-            mark_price.append(dt['markPrice'])
+            symbol.append(dt["symbol"])
+            size.append(dt["amount"])
+            entry_price.append(dt["entryPrice"])
+            mark_price.append(dt["markPrice"])
             pnl.append(f"{round(dt['pnl'],2)} ({round(dt['roe']*100,2)}%)")
-            percentage = dt['roe']
-            if float(dt['entryPrice']) == 0:
-                margin.append("nan")
-                calculatedMargin.append(False)
-                continue
-            price = (
-                float(dt['markPrice'])
-                - float(dt['entryPrice'])
-            ) / float(dt['entryPrice'])
-            if percentage == 0 or price == 0:
-                margin.append("nan")
-                calculatedMargin.append(False)
-            else:
-                estimated_margin = abs(round(percentage / price))
-                calculatedMargin.append(True)
-                margin.append(str(estimated_margin) + "x")
+            margin.append(str(dt["leverage"]) + "x")
+            calculatedMargin.append(True)
+            marginList[dt["symbol"]] = dt["leverage"]
         dictx = {
             "symbol": symbol,
             "size": size,
@@ -69,7 +56,7 @@ class WebScraping(threading.Thread):
             "Estimated Margin": margin,
         }
         df = pd.DataFrame(dictx)
-        return {"time": times, "data": df}, calculatedMargin
+        return {"time": times, "data": df}, calculatedMargin, marginList
 
     def changes(self, df, df2):
         txtype = []
@@ -273,15 +260,7 @@ class WebScraping(threading.Thread):
             )
         return txs  # add this to open trade part
 
-    def position_changes(self, positions,times, uid, prev_df, name, lasttime):
-        # soup = BeautifulSoup(source, features="html.parser")
-        # x = soup.get_text()
-        # ### THIS PART IS ACCORDING TO THE CURRENT WEBPAGE DESIGN WHICH MIGHT BE CHANGED
-        # x = x.split("\n")[4]
-        # idx = x.find("Position")
-        # idx2 = x.find("Start")
-        # idx3 = x.find("No data")
-        # x = x[idx:idx2]
+    def position_changes(self, positions, times, uid, prev_df, name, lasttime):
         following_users = self.userdb.fetch_following(uid)
         try:
             prev_position = self.userdb.fetch_trader_position(uid)
@@ -303,6 +282,16 @@ class WebScraping(threading.Thread):
                     f"Trader {name}, Current time: " + str(now) + "\nNo positions.\n"
                 )
                 txlist = self.changes(prev_df, "x")
+                self.userdb.insert_command2(
+                    {
+                        "cmd": "trader_update",
+                        "name": name,
+                        "txlist": list(txlist["symbol"].to_numpy()),
+                        "position": pd.DataFrame({}).to_json(orient="index"),
+                        "trader": uid,
+                        "margin": {},
+                    }
+                )
                 for users in following_users:
                     self.userdb.insert_command(
                         {
@@ -311,7 +300,7 @@ class WebScraping(threading.Thread):
                             "message": tosend,
                         }
                     )
-                    if users['traders'][uid]["toTrade"]:
+                    if users["traders"][uid]["toTrade"]:
                         tosend = "Making the following trades: \n" + txlist.to_string()
                         self.userdb.insert_command(
                             {
@@ -349,29 +338,29 @@ class WebScraping(threading.Thread):
                                 logger.error(str(e))
                 self.userdb.save_position(uid, "x", True)
             elif self.num_no_data[uid] >= 3:
-                self.userdb.save_position(uid, "x",False)
-            diff = datetime.now() - datetime.strptime(lasttime, "%y-%m-%d %H:%M:%S")
+                self.userdb.save_position(uid, "x", False)
+            # diff = datetime.now() - datetime.strptime(lasttime, "%y-%m-%d %H:%M:%S")
             # if diff.total_seconds() / 3600 >= 24:
-                # for users in following_users:
-                #     self.userdb.insert_command(
-                #         {
-                #             "cmd": "send_message",
-                #             "chat_id": users["chat_id"],
-                #             "message": f"Trader {name}: 24 hours no position update.",
-                #         }
-                #     )
+            # for users in following_users:
+            #     self.userdb.insert_command(
+            #         {
+            #             "cmd": "send_message",
+            #             "chat_id": users["chat_id"],
+            #             "message": f"Trader {name}: 24 hours no position update.",
+            #         }
+            #     )
         else:
             self.num_no_data[uid] = 0
             try:
-                output, calmargin = self.format_results(positions,times)
+                output, calmargin, marginList = self.format_results(positions, times)
             except Exception as e:
-                logger.error(f"Trader {name} may not share position anymore.")
+                logger.error(f"Trader {name} may not share position anymore. {e}")
                 return
             if prev_position == "x":
                 isChanged = True
                 txlist = self.changes(prev_position, output["data"])
             else:
-                prev_position = pd.read_json(prev_position)
+                prev_position = pd.read_json(StringIO(prev_position))
                 try:
                     toComp = output["data"][["symbol", "size", "Entry Price"]]
                     prevdf = prev_position[["symbol", "size", "Entry Price"]]
@@ -441,6 +430,16 @@ class WebScraping(threading.Thread):
                                     }
                                 )
                 # txlist = self.changes(prev_position, output["data"])
+                self.userdb.insert_command2(
+                    {
+                        "cmd": "trader_update",
+                        "name": name,
+                        "txlist": list(txlist["symbol"].to_numpy()),
+                        "position": output["data"].to_json(orient="index"),
+                        "trader": uid,
+                        "margin": marginList,
+                    }
+                )
                 for users in following_users:
                     if users["traders"][uid]["toTrade"] and not txlist.empty:
                         tosend = "Making the following trades: \n" + txlist.to_string()
@@ -478,9 +477,9 @@ class WebScraping(threading.Thread):
                             except Exception as e:
                                 retries += 1
                                 logger.error(str(e))
-                self.userdb.save_position(uid, output["data"].to_json(),True)
+                self.userdb.save_position(uid, output["data"].to_json(), True)
             else:
-                self.userdb.save_position(uid, output["data"].to_json(),False)
+                self.userdb.save_position(uid, output["data"].to_json(), False)
         self.first_run = False
         diff = datetime.now() - datetime.strptime(lasttime, "%y-%m-%d %H:%M:%S")
         # if diff.total_seconds() / 3600 >= 24:
@@ -493,61 +492,93 @@ class WebScraping(threading.Thread):
         #             }
         #         )
 
-    def run(self):  # get the positions
+    def get_cookie(self):
+        cookies = self.userdb.get_cookies()
+        if len(cookies) == 0:
+            return None, None, None
+        cookie_str, token, _id = (
+            cookies[0]["cookie"],
+            cookies[0]["csrftoken"],
+            cookies[0]["_id"],
+        )
+        try:
+            cookie_str = cookie_str.split(";")
+            cookies = dict()
+            for cookie in cookie_str:
+                cookie = cookie.strip().split("=")
+                cookies[cookie[0]] = cookie[1]
+        except Exception as e:
+            logger.error(f"Wrong cookie format, deleting: {e}")
+            self.userdb.remove_cookie(_id)
+            return None, None, None
+        return cookies, token, _id
+
+    def run(self):
         while not self.isStop.is_set():
             if self.pauseload.is_set():
                 time.sleep(5)
                 continue
-            # try:
             urls = self.userdb.retrieve_traders()
             for uid in urls:
-                time.sleep(0.4)
                 # logger.info(f"Running {uid['name']}.")
                 try:
-                    r = requests.post("https://www.binance.com/bapi/futures/v1/public/future/leaderboard/getOtherPosition",json={
-                        "encryptedUid": uid['uid'],
-                        "tradeType": "PERPETUAL"
-                    })
-                    assert r.status_code == 200
-                    positions = r.json()['data']['otherPositionRetList']
-                    times = r.json()['data']['updateTimeStamp']
-                    assert positions is not None
-                    self.error[uid['uid']] = 0
-                except:
-                    logger.error(f"{uid['name']} cannot fetch url")
-                    following_users = self.userdb.fetch_following(uid['uid'])
-                    if uid['uid'] not in self.error:
-                        self.error[uid['uid']] = 1
-                    else:
-                        self.error[uid['uid']] += 1
-                        if self.error[uid['uid']] >= 20:
-                            self.error[uid['uid']] = 11
-                    if 5 <= self.error[uid['uid']] <=10:
-                        for users in following_users:
-                            self.userdb.insert_command(
-                                {
-                                    "cmd": "send_message",
-                                    "chat_id": users["chat_id"],
-                                    "message": f"Trader {uid['name']}: May have stopped sharing positions!",
-                                }
+                    while True:
+                        time.sleep(0.01)
+                        cookies, token, _id = self.get_cookie()
+                        headers["Csrftoken"] = token
+                        assert cookies is not None, "Out of correct cookie."
+                        r = requests.post(
+                            "https://www.binance.com/bapi/futures/v2/private/future/leaderboard/getOtherPosition",
+                            json={"encryptedUid": uid["uid"], "tradeType": "PERPETUAL"},
+                            cookies=cookies,
+                            headers=headers,
+                        )
+                        if r.json()["success"] == False or r.status_code != 200:
+                            logger.info(
+                                f"Login credential may have expired, deleting cookie: {r.json()['message']}"
                             )
+                            self.userdb.remove_cookie(_id)
+                            continue
+                        positions = r.json()["data"]["otherPositionRetList"]
+                        times = r.json()["data"]["updateTimeStamp"]
+                        positions = [] if positions is None else positions
+                        self.error[uid["uid"]] = 0
+                        break
+                except Exception as e:
+                    time.sleep(0.05)
+                    # following_users = self.userdb.fetch_following(uid["uid"])
+                    if uid["uid"] not in self.error:
+                        self.error[uid["uid"]] = 1
+                    else:
+                        self.error[uid["uid"]] += 1
+                        if self.error[uid["uid"]] >= 20:
+                            self.error[uid["uid"]] = 11
+                    if self.error[uid["uid"]] == 10:
+                        logger.error(f"{uid['name']} cannot fetch url: {e}")
+                        self.globals.send_discord_reminder(
+                            f"Trader {uid['name']}: May have stopped sharing positions!"
+                        )
+                        # for users in following_users:
+                        #     self.userdb.insert_command(
+                        #         {
+                        #             "cmd": "send_message",
+                        #             "chat_id": users["chat_id"],
+                        #             "message": f"Trader {uid['name']}: May have stopped sharing positions!",
+                        #         }
+                        #     )
                     continue
                 if uid["positions"] != "x":
-                    prevpos = pd.read_json(uid["positions"])
+                    prevpos = pd.read_json(StringIO(uid["positions"]))
                 else:
                     prevpos = "x"
                 self.position_changes(
-                    positions,times, uid["uid"], prevpos, uid["name"], uid["lastPosTime"]
+                    positions,
+                    times,
+                    uid["uid"],
+                    prevpos,
+                    uid["name"],
+                    uid["lastPosTime"],
                 )
-                time.sleep(0.4)
-            # except Exception as e:
-            #     logger.error(str(e))
-            #     logger.error("Oh no uncaught problem")
-            #     self.driver.quit()
-            #     self.driver = None
-            #     time.sleep(6)
-            #     self.driver = webdriver.Chrome(driver_location, options=options)
-            
 
     def stop(self):
         self.isStop.set()

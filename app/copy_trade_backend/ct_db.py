@@ -6,13 +6,27 @@ class ctDatabase:
     def __init__(self, glb):
         self.client = pymongo.MongoClient(glb.dbpath)
         self.db = self.client["binance"]
+        self.db2 = self.client["binanceCT"]
         self.usertable = self.db["Users"]
         self.notitable = self.db["Notifications"]
         self.commandtable = self.db["Commands"]
+        self.commandtable2 = self.db2["Commands"]
         self.tradertable = self.db["Traders"]
         self.historytable = self.db["TradeHistory"]
+        self.cookietable = self.db["Cookies"]
         self.dblock = glb.dblock
         self.globals = glb
+
+    def get_cookies(self):
+        data = []
+        self.dblock.acquire()
+        for x in self.cookietable.find():
+            data.append(x)
+        self.dblock.release()
+        return data
+
+    def remove_cookie(self, id):
+        self.cookietable.delete_one({"_id": id})
 
     def get_noti(self):
         data = []
@@ -50,10 +64,10 @@ class ctDatabase:
         data = self.tradertable.find_one(myquery)
         return data["positions"]
 
-    def save_position(self, uid, x,changeTime):
+    def save_position(self, uid, x, changeTime):
         # save trader positions
         myquery = {"uid": uid}
-        if changeTime: 
+        if changeTime:
             newvalues = {
                 "$set": {
                     f"positions": x,
@@ -61,9 +75,9 @@ class ctDatabase:
                 }
             }
             history = {
-            "uid": uid,
-            "positions": x,
-            "lastPosTime": datetime.now().strftime("%y-%m-%d %H:%M:%S"),
+                "uid": uid,
+                "positions": x,
+                "lastPosTime": datetime.now().strftime("%y-%m-%d %H:%M:%S"),
             }
             self.dblock.acquire()
             self.historytable.insert_one(history)
@@ -116,6 +130,11 @@ class ctDatabase:
     def insert_command(self, info):
         self.dblock.acquire()
         self.commandtable.insert_one(info)
+        self.dblock.release()
+
+    def insert_command2(self, info):
+        self.dblock.acquire()
+        self.commandtable2.insert_one(info)
         self.dblock.release()
 
     def update_positions(

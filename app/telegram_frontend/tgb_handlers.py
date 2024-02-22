@@ -4,11 +4,10 @@ from telegram.ext import (
 )
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 import telegram
-import time
 import os
+from io import StringIO
 import signal
 import pandas as pd
-import urllib
 import threading
 from telegram.ext import (
     CommandHandler,
@@ -16,10 +15,9 @@ from telegram.ext import (
     Filters,
     ConversationHandler,
 )
-from pybit.usdt_perpetual import HTTP
 from datetime import datetime
 import requests
-from app.data.credentials import ip
+from app.data.credentials import ip, admin_chatid, headers
 
 import logging
 
@@ -29,6 +27,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 (
+    COOKIE,
+    CSRF,
+    COOKIELABEL,
     AUTH,
     SLIPPAGE,
     CLOSEALL,
@@ -85,7 +86,7 @@ logger = logging.getLogger(__name__)
     SEP3,
     CP1,
     PLATFORM,
-) = range(56)
+) = range(59)
 
 
 class tgHandlers:
@@ -129,18 +130,11 @@ class tgHandlers:
         tmode,
     ):
         # get symbols, set all leverage to 5x, proportion to 0
-        client = HTTP(
-            "https://api.bybit.com",
-            api_key="",
-            api_secret="",
-            request_timeout=40,
-        )
-        res = client.query_symbol()
+        res = self.globals.get_all_symbols()
         lev = dict()
         prop = dict()
         tmoded = dict()
-        for sym in res["result"]:
-            sym = sym["name"]
+        for sym in res:
             lev[sym] = 5
             prop[sym] = 0
             tmoded[sym] = tmode
@@ -174,7 +168,7 @@ class tgHandlers:
                 chat_id=chat_id,
                 text=f"Thanks! {trader_name}'s latest position:",
             )
-            df = pd.read_json(traderdoc["positions"])
+            df = pd.read_json(StringIO(traderdoc["positions"]))
             numrows = df.shape[0]
             if numrows <= 10:
                 tosend = f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
@@ -194,6 +188,10 @@ class tgHandlers:
                         self.updater.bot.sendMessage(
                             chat_id=chat_id, text=seconddf.to_string()
                         )
+            balance = self.totalbalance(df)
+            self.updater.bot.sendMessage(
+                chat_id=chat_id, text=f"Total USDT Position balance: {balance}"
+            )
             if toTrade:
                 self.updater.bot.sendMessage(
                     chat_id=chat_id,
@@ -202,7 +200,7 @@ class tgHandlers:
                 )
         else:
             # add to trader database
-            df = self.globals.get_init_traderPosition(trader_uid)
+            df = self.globals.get_init_traderPosition(trader_uid, self.dbobject)
             try:
                 df = df.to_json()
             except:
@@ -219,26 +217,35 @@ class tgHandlers:
                 chat_id=chat_id,
                 text=f"Thanks! {trader_name}'s latest position:",
             )
-            df = pd.read_json(traderdoc["positions"])
-            numrows = df.shape[0]
-            if numrows <= 10:
-                tosend = f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
-                self.updater.bot.sendMessage(chat_id=chat_id, text=tosend)
-            else:
-                firstdf = df.iloc[0:10]
-                tosend = (
-                    f"Trader {traderdoc['name']}: "
-                    + "\n"
-                    + firstdf.to_string()
-                    + "\n(cont...)"
+            try:
+                df = pd.read_json(StringIO(traderdoc["positions"]))
+                numrows = df.shape[0]
+                if numrows <= 10:
+                    tosend = (
+                        f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
+                    )
+                    self.updater.bot.sendMessage(chat_id=chat_id, text=tosend)
+                else:
+                    firstdf = df.iloc[0:10]
+                    tosend = (
+                        f"Trader {traderdoc['name']}: "
+                        + "\n"
+                        + firstdf.to_string()
+                        + "\n(cont...)"
+                    )
+                    self.updater.bot.sendMessage(chat_id=chat_id, text=tosend)
+                    for i in range(numrows // 10):
+                        seconddf = df.iloc[(i + 1) * 10 : min(numrows, (i + 2) * 10)]
+                        if not seconddf.empty:
+                            self.updater.bot.sendMessage(
+                                chat_id=chat_id, text=seconddf.to_string()
+                            )
+                balance = self.totalbalance(df)
+                self.updater.bot.sendMessage(
+                    chat_id=chat_id, text=f"Total USDT Position balance: {balance}"
                 )
-                self.updater.bot.sendMessage(chat_id=chat_id, text=tosend)
-                for i in range(numrows // 10):
-                    seconddf = df.iloc[(i + 1) * 10 : min(numrows, (i + 2) * 10)]
-                    if not seconddf.empty:
-                        self.updater.bot.sendMessage(
-                            chat_id=chat_id, text=seconddf.to_string()
-                        )
+            except:
+                self.updater.bot.sendMessage(chat_id=chat_id, text="No Positions.")
             if toTrade:
                 self.updater.bot.sendMessage(
                     chat_id=chat_id,
@@ -246,20 +253,11 @@ class tgHandlers:
                     parse_mode=telegram.ParseMode.MARKDOWN,
                 )
 
-    def addTraderThread(
-        self, chat_id, trader_name, trader_uid, toTrade, tmode
-    ):
-        client = HTTP(
-            "https://api.bybit.com",
-            api_key="",
-            api_secret="",
-            request_timeout=40,
-        )
-        res = client.query_symbol()
+    def addTraderThread(self, chat_id, trader_name, trader_uid, toTrade, tmode):
+        res = self.globals.get_all_symbols()
         prop = dict()
         tmoded = dict()
-        for sym in res["result"]:
-            sym = sym["name"]
+        for sym in res:
             prop[sym] = 0
             tmoded[sym] = tmode
         userdoc = self.dbobject.get_user(chat_id)
@@ -281,10 +279,12 @@ class tgHandlers:
                 text=f"Thanks! {trader_name}'s latest position:",
             )
             try:
-                df = pd.read_json(traderdoc["positions"]) 
+                df = pd.read_json(StringIO(traderdoc["positions"]))
                 numrows = df.shape[0]
                 if numrows <= 10:
-                    tosend = f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
+                    tosend = (
+                        f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
+                    )
                     self.updater.bot.sendMessage(chat_id=chat_id, text=tosend)
                 else:
                     firstdf = df.iloc[0:10]
@@ -301,6 +301,10 @@ class tgHandlers:
                             self.updater.bot.sendMessage(
                                 chat_id=chat_id, text=seconddf.to_string()
                             )
+                balance = self.totalbalance(df)
+                self.updater.bot.sendMessage(
+                    chat_id=chat_id, text=f"Total USDT Position balance: {balance}"
+                )
             except:
                 self.updater.bot.sendMessage(chat_id=chat_id, text="No Positions.")
             if toTrade:
@@ -311,7 +315,7 @@ class tgHandlers:
                 )
         else:
             # add to trader database
-            df = self.globals.get_init_traderPosition(trader_uid)
+            df = self.globals.get_init_traderPosition(trader_uid, self.dbobject)
             try:
                 df = df.to_json()
             except:
@@ -329,10 +333,12 @@ class tgHandlers:
                 text=f"Thanks! {trader_name}'s latest position:",
             )
             try:
-                df = pd.read_json(traderdoc["positions"])
+                df = pd.read_json(StringIO(traderdoc["positions"]))
                 numrows = df.shape[0]
                 if numrows <= 10:
-                    tosend = f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
+                    tosend = (
+                        f"Trader {traderdoc['name']}" + "\n" + df.to_string() + "\n"
+                    )
                     self.updater.bot.sendMessage(chat_id=chat_id, text=tosend)
                 else:
                     firstdf = df.iloc[0:10]
@@ -349,6 +355,10 @@ class tgHandlers:
                             self.updater.bot.sendMessage(
                                 chat_id=chat_id, text=seconddf.to_string()
                             )
+                balance = self.totalbalance(df)
+                self.updater.bot.sendMessage(
+                    chat_id=chat_id, text=f"Total USDT Position balance: {balance}"
+                )
             except:
                 self.updater.bot.sendMessage(chat_id=chat_id, text="No Positions.")
             if toTrade:
@@ -359,14 +369,14 @@ class tgHandlers:
                 )
 
     def retrieveUserName(self, uid):
-        success = False
         name = ""
         try:
-            r = requests.post("https://www.binance.com/bapi/futures/v2/public/future/leaderboard/getOtherLeaderboardBaseInfo",json={
-                "encryptedUid": uid
-            })
+            r = requests.post(
+                "https://www.binance.com/bapi/futures/v2/public/future/leaderboard/getOtherLeaderboardBaseInfo",
+                json={"encryptedUid": uid},
+            )
             assert r.status_code == 200
-            name = r.json()['data']['nickName']
+            name = r.json()["data"]["nickName"]
         except:
             return None
         return name
@@ -412,7 +422,9 @@ class tgHandlers:
         # update.message.reply_text(
         #     "Please enter 2. (This field Reserved for choosing platforms, but currently only bybit is supported)."  # choose the platform:\n1. AAX\n2. Bybit\n3.Binance\nPlease enter your choice (1,2,3)"
         # )
-        update.message.reply_text(f"Please provide your API key from Bybit. Bind your API key to the IP address {ip}.")
+        update.message.reply_text(
+            f"Please provide your API key from Bybit. Bind your API key to the IP address {ip}."
+        )
         return APIKEY
 
     def check_api(self, update: Update, context: CallbackContext):
@@ -444,17 +456,6 @@ class tgHandlers:
         logger.info(
             "%s has entered the first url.", update.message.from_user.first_name
         )
-        try:
-            r = requests.post("https://www.binance.com/bapi/futures/v1/public/future/leaderboard/getOtherPosition",json={
-                "encryptedUid": url,
-                "tradeType": "PERPETUAL"
-            })
-            assert r.status_code == 200
-        except:
-            update.message.reply_text(
-                "Sorry! Your UID is invalid. Please try entering again."
-            )
-            return TRADERURL
         traderName = self.retrieveUserName(url)
         if traderName is None:
             update.message.reply_text(
@@ -476,10 +477,40 @@ class tgHandlers:
         response = update.message.text
         if response == "yes":
             context.user_data["toTrade"] = True
+            context.user_data["tmode"] = 0
+            if context.user_data["First"]:
+                t1 = threading.Thread(
+                    target=self.initUserThread,
+                    args=(
+                        update.message.chat_id,
+                        context.user_data["uname"],
+                        context.user_data["safe_ratio"],
+                        context.user_data["name"],
+                        context.user_data["uid"],
+                        context.user_data["api_key"],
+                        context.user_data["api_secret"],
+                        context.user_data["toTrade"],
+                        context.user_data["tmode"],
+                    ),
+                )
+                t1.start()
+            else:
+                t1 = threading.Thread(
+                    target=self.addTraderThread,
+                    args=(
+                        update.message.chat_id,
+                        context.user_data["name"],
+                        context.user_data["uid"],
+                        context.user_data["toTrade"],
+                        context.user_data["tmode"],
+                    ),
+                )
+                t1.start()
         else:
             context.user_data["toTrade"] = False
-            update.message.reply_text("Please wait...", reply_markup=ReplyKeyboardRemove())
-            # logger.info(f"Confirm here {context.user_data}") 
+            update.message.reply_text(
+                "Please wait...", reply_markup=ReplyKeyboardRemove()
+            )
             if context.user_data["First"]:
                 t1 = threading.Thread(
                     target=self.initUserThread,
@@ -509,53 +540,54 @@ class tgHandlers:
                 )
                 t1.start()
             return ConversationHandler.END
-        update.message.reply_text("Please select the default trading mode:")
-        update.message.reply_text(
-            "0. MARKET: Once we detected a change in position, you will make an order immediately at the market price. As a result, your entry price might deviate from the trader's entry price (especially when there are significant market movements)."
-        )
-        update.message.reply_text(
-            "1. LIMIT: You will make an limit order at the same price as the trader's estimated entry price. However, due to fluctuating market movements, your order might not be fulfilled."
-        )
-        update.message.reply_text(
-            "2. LIMIT, THEN MARKET: When opening positions, you will make an limit order at the same price as the trader's estimated entry price. When closing positions, you will follow market."
-        )
-        update.message.reply_text(
-            "Please type 0,1 or 2 to indicate your choice. Note that you can change it later for every (trader,symbol) pair."
-        )
-        return SL
+        # update.message.reply_text("Please select the default trading mode:")
+        # update.message.reply_text(
+        #     "0. MARKET: Once we detected a change in position, you will make an order immediately at the market price. As a result, your entry price might deviate from the trader's entry price (especially when there are significant market movements)."
+        # )
+        # update.message.reply_text(
+        #     "1. LIMIT: You will make an limit order at the same price as the trader's estimated entry price. However, due to fluctuating market movements, your order might not be fulfilled."
+        # )
+        # update.message.reply_text(
+        #     "2. LIMIT, THEN MARKET: When opening positions, you will make an limit order at the same price as the trader's estimated entry price. When closing positions, you will follow market."
+        # )
+        # update.message.reply_text(
+        #     "Please type 0,1 or 2 to indicate your choice. Note that you can change it later for every (trader,symbol) pair."
+        # )
 
-    def tmode_confirm(self, update: Update, context: CallbackContext):
-        context.user_data["tmode"] = int(update.message.text)
-        update.message.reply_text("Please wait...", reply_markup=ReplyKeyboardRemove())
-        if context.user_data["First"]:
-            t1 = threading.Thread(
-                target=self.initUserThread,
-                args=(
-                    update.message.chat_id,
-                    context.user_data["uname"],
-                    context.user_data["safe_ratio"],
-                    context.user_data["name"],
-                    context.user_data["uid"],
-                    context.user_data["api_key"],
-                    context.user_data["api_secret"],
-                    context.user_data["toTrade"],
-                    context.user_data["tmode"],
-                ),
-            )
-            t1.start()
-        else:
-            t1 = threading.Thread(
-                target=self.addTraderThread,
-                args=(
-                    update.message.chat_id,
-                    context.user_data["name"],
-                    context.user_data["uid"],
-                    context.user_data["toTrade"],
-                    context.user_data["tmode"],
-                ),
-            )
-            t1.start()
         return ConversationHandler.END
+
+    # def tmode_confirm(self, update: Update, context: CallbackContext):
+    #     context.user_data["tmode"] = int(update.message.text)
+    #     update.message.reply_text("Please wait...", reply_markup=ReplyKeyboardRemove())
+    #     if context.user_data["First"]:
+    #         t1 = threading.Thread(
+    #             target=self.initUserThread,
+    #             args=(
+    #                 update.message.chat_id,
+    #                 context.user_data["uname"],
+    #                 context.user_data["safe_ratio"],
+    #                 context.user_data["name"],
+    #                 context.user_data["uid"],
+    #                 context.user_data["api_key"],
+    #                 context.user_data["api_secret"],
+    #                 context.user_data["toTrade"],
+    #                 context.user_data["tmode"],
+    #             ),
+    #         )
+    #         t1.start()
+    #     else:
+    #         t1 = threading.Thread(
+    #             target=self.addTraderThread,
+    #             args=(
+    #                 update.message.chat_id,
+    #                 context.user_data["name"],
+    #                 context.user_data["uid"],
+    #                 context.user_data["toTrade"],
+    #                 context.user_data["tmode"],
+    #             ),
+    #         )
+    #         t1.start()
+    #     return ConversationHandler.END
 
     def cancel(self, update: Update, context: CallbackContext) -> int:
         """Cancels and ends the conversation."""
@@ -579,21 +611,12 @@ class tgHandlers:
         return TRADERURL2
 
     def url_add(self, update: Update, context: CallbackContext) -> int:
-        url = update.message.text
-        context.user_data['uid'] = url
-        update.message.reply_text("Please wait...", reply_markup=ReplyKeyboardRemove())
-        try:
-            r = requests.post("https://www.binance.com/bapi/futures/v1/public/future/leaderboard/getOtherPosition",json={
-                "encryptedUid": url,
-                "tradeType": "PERPETUAL"
-            })
-            assert r.status_code == 200
-        except:
-            update.message.reply_text(
-                "Sorry! Your UID is invalid. Please try entering again."
-            )
-            return TRADERURL2
-        traderName = self.retrieveUserName(url)
+        context.user_data["uid"] = update.message.text
+        user = self.dbobject.get_user(update.message.chat_id)
+        if context.user_data["uid"] in user["traders"].keys():
+            update.message.reply_text("You have already added this trader.")
+            return ConversationHandler.END
+        traderName = self.retrieveUserName(context.user_data["uid"])
         if traderName is None:
             update.message.reply_text(
                 "Sorry! Your UID is invalid. Please try entering again."
@@ -648,16 +671,28 @@ class tgHandlers:
         )
         return VIEWTRADER
 
+    def totalbalance(self, df):
+        total = 0
+        for index, row in df.iterrows():
+            size = float(row["size"])
+            mark_price = float(row["Mark Price"])
+            symbol = row["symbol"]
+            if symbol[-4:] == "USDT":
+                total += size * mark_price
+        return round(total, 4)
+        # Rest of your code here
+
     def view_traderInfo(self, update: Update, context: CallbackContext):
         traderinfo = self.dbobject.get_trader(update.message.text)
         update.message.reply_text(
-            f"{update.message.text}'s current position: \n(Last position update: {str(traderinfo['lastPosTime'])})",  reply_markup=ReplyKeyboardRemove()
+            f"{update.message.text}'s current position: \n(Last position update: {str(traderinfo['lastPosTime'])})",
+            reply_markup=ReplyKeyboardRemove(),
         )
         msg = traderinfo["positions"]
         if msg == "x":
             update.message.reply_text("None.")
         else:
-            msg = pd.read_json(msg)
+            msg = pd.read_json(StringIO(msg))
             numrows = msg.shape[0]
             if numrows <= 10:
                 update.message.reply_text(f"{msg.to_string()}")
@@ -669,6 +704,9 @@ class tgHandlers:
                     seconddf = msg.iloc[(i + 1) * 10 : min(numrows, (i + 2) * 10)]
                     if not seconddf.empty:
                         update.message.reply_text(f"{seconddf.to_string()}")
+            update.message.reply_text(
+                f"Total USDT Position balance: {self.totalbalance(msg)}"
+            )
         # update.message.reply_text(f"Successfully removed {update.message.text}.")
         return ConversationHandler.END
 
@@ -726,25 +764,50 @@ class tgHandlers:
         return ConversationHandler.END
 
     def admin(self, update: Update, context: CallbackContext):
-        update.message.reply_text("Please enter admin authorization code to continue.")
-        return AUTH2
-
-    def auth_check2(self, update: Update, context: CallbackContext) -> int:
-        user = update.message.from_user
         logger.info(
             "%s is doing authentication check for admin.",
             update.message.from_user.first_name,
         )
-        if update.message.text == self.admin_code:
+        if not update.message.chat_id in admin_chatid:
             update.message.reply_text(
-                "Great! Please enter the message that you want to announce to all users. /cancel to cancel, /save to save users data, /endall to end all users."
-            )
-            return ANNOUNCE
-        else:
-            update.message.reply_text(
-                "Sorry! The access code is wrong. Type /admin again if you need to retry."
+                "Sorry you are not authorized to access this endpoint."
             )
             return ConversationHandler.END
+        update.message.reply_text(
+            "Great! /cancel to cancel, /addcookie to add cookie, /viewcookie to view cookie."
+        )
+        return ANNOUNCE
+
+    def add_cookie(self, update: Update, context: CallbackContext):
+        update.message.reply_text("Please enter the cookie copied from binance.")
+        return COOKIE
+
+    def add_csrf(self, update: Update, context: CallbackContext):
+        context.user_data["cookie"] = update.message.text
+        update.message.reply_text("Please enter the csrftoken.")
+        return COOKIELABEL
+
+    def add_cookie_label(self, update: Update, context: CallbackContext):
+        context.user_data["csrftoken"] = update.message.text
+        update.message.reply_text("Enter a label for this cookie.")
+        return CSRF
+
+    def add_credential(self, update: Update, context: CallbackContext):
+        self.dbobject.add_credential(
+            context.user_data["cookie"],
+            context.user_data["csrftoken"],
+            update.message.text,
+        )
+        update.message.reply_text("Success!!!")
+        return ConversationHandler.END
+
+    def show_cookie(self, update: Update, context: CallbackContext):
+        data = self.dbobject.get_cookies()
+        msg = "The cookies in database are:\n"
+        for i, cookie in enumerate(data):
+            msg += f"{i+1}. {cookie['label']}\n"
+        update.message.reply_text(msg)
+        return ConversationHandler.END
 
     def announce(self, update: Update, context: CallbackContext):
         for doc in self.dbobject.getall("usertable"):
@@ -823,7 +886,9 @@ class tgHandlers:
             context.user_data["symbol"],
             lev,
         )
-        update.message.reply_text("The leverage is changed successfully!", reply_markup=ReplyKeyboardRemove())
+        update.message.reply_text(
+            "The leverage is changed successfully!", reply_markup=ReplyKeyboardRemove()
+        )
         return ConversationHandler.END
 
     def set_all_proportion(self, update: Update, context: CallbackContext):
@@ -852,7 +917,8 @@ class tgHandlers:
         )
         if ("toTrade" not in traderinfo) or (not traderinfo["toTrade"]):
             update.message.reply_text(
-                "You did not set copy trade option for this trader. If needed, /delete this trader and /add again.", reply_markup=ReplyKeyboardRemove()
+                "You did not set copy trade option for this trader. If needed, /delete this trader and /add again.",
+                reply_markup=ReplyKeyboardRemove(),
             )
             return ConversationHandler.END
         context.user_data["trader"] = traderinfo["uid"]
@@ -871,7 +937,7 @@ class tgHandlers:
         self.dbobject.set_all_proportion(
             update.message.chat_id, context.user_data["trader"], prop
         )
-        update.message.reply_text("Success!",reply_markup=ReplyKeyboardRemove())
+        update.message.reply_text("Success!", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def set_proportion(self, update: Update, context: CallbackContext):
@@ -970,7 +1036,10 @@ class tgHandlers:
     def getLeverageReal(self, update: Update, context: CallbackContext):
         symbol = update.message.text
         result = self.dbobject.query_field(update.message.chat_id, "leverage", symbol)
-        update.message.reply_text(f"The leverage set for {symbol} is {result}x.", reply_markup=ReplyKeyboardRemove())
+        update.message.reply_text(
+            f"The leverage set for {symbol} is {result}x.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
         return ConversationHandler.END
 
     def get_proportion(self, update: Update, context: CallbackContext):
@@ -1037,7 +1106,8 @@ class tgHandlers:
             symbol,
         )
         update.message.reply_text(
-            f"The proportion set for {context.user_data['traderName']}, {symbol} is {result}x.", reply_markup=ReplyKeyboardRemove()
+            f"The proportion set for {context.user_data['traderName']}, {symbol} is {result}x.",
+            reply_markup=ReplyKeyboardRemove(),
         )
         return ConversationHandler.END
 
@@ -1124,7 +1194,7 @@ class tgHandlers:
             context.user_data["symbol"],
             tmode,
         )
-        update.message.reply_text("Success!",reply_markup=ReplyKeyboardRemove())
+        update.message.reply_text("Success!", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def set_allomode(self, update: Update, context: CallbackContext):
@@ -1181,7 +1251,9 @@ class tgHandlers:
         self.dbobject.set_all_tmode(
             update.message.chat_id, context.user_data["trader"], tmode
         )
-        update.message.reply_text(f"Successfully changed trading mode!",reply_markup=ReplyKeyboardRemove())
+        update.message.reply_text(
+            f"Successfully changed trading mode!", reply_markup=ReplyKeyboardRemove()
+        )
         return ConversationHandler.END
 
     def change_safetyratio(self, update: Update, context: CallbackContext):
@@ -1199,7 +1271,7 @@ class tgHandlers:
             update.message.reply_text("This is not a valid ratio, please enter again.")
             return LEVTRADER6
         self.dbobject.set_safety(update.message.chat_id, safety_ratio)
-        update.message.reply_text("Success!",reply_markup=ReplyKeyboardRemove())
+        update.message.reply_text("Success!", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def change_slippage(self, update: Update, context: CallbackContext):
@@ -1217,7 +1289,7 @@ class tgHandlers:
             update.message.reply_text("This is not a valid ratio, please enter again.")
             return SLIPPAGE
         self.dbobject.set_slippage(update.message.chat_id, safety_ratio)
-        update.message.reply_text("Success!",reply_markup=ReplyKeyboardRemove())
+        update.message.reply_text("Success!", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def change_api(self, update: Update, context: CallbackContext):
@@ -1248,7 +1320,7 @@ class tgHandlers:
         self.dbobject.set_api(
             update.message.chat_id, context.user_data["api_key"], update.message.text
         )
-        update.message.reply_text("Success!",reply_markup=ReplyKeyboardRemove())
+        update.message.reply_text("Success!", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     def check_balance(self, update: Update, context: CallbackContext):
@@ -1318,11 +1390,11 @@ class tgHandlers:
                             Filters.text & ~Filters.command, self.trade_confirm
                         )
                     ],
-                    SL: [
-                        MessageHandler(
-                            Filters.text & ~Filters.command, self.tmode_confirm
-                        )
-                    ],
+                    # SL: [
+                    #     MessageHandler(
+                    #         Filters.text & ~Filters.command, self.tmode_confirm
+                    #     )
+                    # ],
                 },
                 fallbacks=[CommandHandler("cancel", self.cancel)],
             )
@@ -1337,9 +1409,9 @@ class tgHandlers:
                     TOTRADE: [
                         MessageHandler(Filters.regex("^(yes|no)$"), self.trade_confirm)
                     ],
-                    SL: [
-                        MessageHandler(Filters.regex("^(0|1|2)$"), self.tmode_confirm)
-                    ],
+                    # SL: [
+                    #     MessageHandler(Filters.regex("^(0|1|2)$"), self.tmode_confirm)
+                    # ],
                 },
                 fallbacks=[CommandHandler("cancel", self.cancel)],
             )
@@ -1364,13 +1436,28 @@ class tgHandlers:
             ConversationHandler(
                 entry_points=[CommandHandler("admin", self.admin)],
                 states={
-                    AUTH2: [
-                        MessageHandler(
-                            Filters.text & ~Filters.command, self.auth_check2
-                        )
-                    ],
+                    # AUTH2: [
+                    #     MessageHandler(
+                    #         Filters.text & ~Filters.command, self.auth_check2
+                    #     )
+                    # ],
                     ANNOUNCE: [
-                        MessageHandler(Filters.text & ~Filters.command, self.announce),
+                        # MessageHandler(Filters.text & ~Filters.command, self.announce),
+                        CommandHandler("addcookie", self.add_cookie),
+                        CommandHandler("viewcookie", self.show_cookie),
+                    ],
+                    COOKIE: [
+                        MessageHandler(Filters.text & ~Filters.command, self.add_csrf),
+                    ],
+                    CSRF: [
+                        MessageHandler(
+                            Filters.text & ~Filters.command, self.add_credential
+                        ),
+                    ],
+                    COOKIELABEL: [
+                        MessageHandler(
+                            Filters.text & ~Filters.command, self.add_cookie_label
+                        ),
                     ],
                 },
                 fallbacks=[CommandHandler("cancel", self.cancel)],
@@ -1522,43 +1609,43 @@ class tgHandlers:
                 fallbacks=[CommandHandler("cancel", self.cancel)],
             )
         )
-        dispatcher.add_handler(
-            ConversationHandler(
-                entry_points=[CommandHandler("settmode", self.set_omode)],
-                states={
-                    PROPTRADER2: [
-                        MessageHandler(
-                            Filters.text & ~Filters.command, self.omode_choosetrader
-                        )
-                    ],
-                    PROPSYM2: [
-                        MessageHandler(
-                            Filters.text & ~Filters.command, self.omode_choosesymbol
-                        )
-                    ],
-                    REALSETPROP3: [
-                        MessageHandler(Filters.regex("^(0|1|2)$"), self.setomodeReal)
-                    ],
-                },
-                fallbacks=[CommandHandler("cancel", self.cancel)],
-            )
-        )
-        dispatcher.add_handler(
-            ConversationHandler(
-                entry_points=[CommandHandler("setalltmode", self.set_allomode)],
-                states={
-                    LEVTRADER5: [
-                        MessageHandler(
-                            Filters.text & ~Filters.command, self.allomode_choosetrader
-                        )
-                    ],
-                    REALSETLEV6: [
-                        MessageHandler(Filters.regex("^(0|1|2)$"), self.setallomodeReal)
-                    ],
-                },
-                fallbacks=[CommandHandler("cancel", self.cancel)],
-            )
-        )
+        # dispatcher.add_handler(
+        #     ConversationHandler(
+        #         entry_points=[CommandHandler("settmode", self.set_omode)],
+        #         states={
+        #             PROPTRADER2: [
+        #                 MessageHandler(
+        #                     Filters.text & ~Filters.command, self.omode_choosetrader
+        #                 )
+        #             ],
+        #             PROPSYM2: [
+        #                 MessageHandler(
+        #                     Filters.text & ~Filters.command, self.omode_choosesymbol
+        #                 )
+        #             ],
+        #             REALSETPROP3: [
+        #                 MessageHandler(Filters.regex("^(0|1|2)$"), self.setomodeReal)
+        #             ],
+        #         },
+        #         fallbacks=[CommandHandler("cancel", self.cancel)],
+        #     )
+        # )
+        # dispatcher.add_handler(
+        #     ConversationHandler(
+        #         entry_points=[CommandHandler("setalltmode", self.set_allomode)],
+        #         states={
+        #             LEVTRADER5: [
+        #                 MessageHandler(
+        #                     Filters.text & ~Filters.command, self.allomode_choosetrader
+        #                 )
+        #             ],
+        #             REALSETLEV6: [
+        #                 MessageHandler(Filters.regex("^(0|1|2)$"), self.setallomodeReal)
+        #             ],
+        #         },
+        #         fallbacks=[CommandHandler("cancel", self.cancel)],
+        #     )
+        # )
         dispatcher.add_handler(
             ConversationHandler(
                 entry_points=[CommandHandler("changesr", self.change_safetyratio)],

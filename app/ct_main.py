@@ -19,6 +19,8 @@ def main():
     t1.start()
     t2 = threading.Thread(target=globals.check_noti, args=(database,))
     t2.start()
+    t3 = threading.Thread(target=globals.cookie_check, args=(database,))
+    t3.start()
     logger.info("The copy trade program has started running.")
 
 

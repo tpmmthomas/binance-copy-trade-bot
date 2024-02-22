@@ -2,7 +2,7 @@ import pymongo
 import pandas as pd
 import time
 import logging
-from pybit.usdt_perpetual import HTTP
+from pybit.unified_trading import HTTP
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -19,7 +19,20 @@ class dbOperations:
         self.commandtable = self.db["Commands"]
         self.tradertable = self.db["Traders"]
         self.notitable = self.db["Notifications"]
+        self.cookietable = self.db["Cookies"]
         self.updater = udt
+
+    def get_cookies(self):
+        data = []
+        for x in self.cookietable.find():
+            data.append(x)
+        return data
+
+    def add_credential(self, cookie, token, label):
+        doc = {"cookie": cookie, "csrftoken": token, "label": label}
+        self.cookietable.insert_one(doc)
+
+    # Do not allow removing cookie in front end
 
     def getall(self, table):
         data = []
@@ -187,15 +200,34 @@ class dbOperations:
         newvalues = {"$set": {f"api_key": key, "api_secret": secret}}
         self.usertable.update_one(myquery, newvalues)
 
+    def check_uta(self, session):
+        try:
+            res = session.get_account_info()
+            res = res["result"]["unifiedMarginStatus"]
+            if res == 3 or res == 4:
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Check UTA {e}")
+        return False
+
     def get_balance(self, chat_id):
         result = self.usertable.find_one({"chat_id": chat_id})
         try:
             client = HTTP(
-                endpoint="https://api.bybit.com", api_key=result["api_key"], api_secret=result["api_secret"]
+                testnet=False,
+                api_key=result["api_key"],
+                api_secret=result["api_secret"],
             )
-            result = client.get_wallet_balance(coin="USDT")
-            result = result["result"]["USDT"]
-            tosend = f"Your USDT account balance:\nBalance: {result['equity']}\nAvailable: {result['available_balance']}\nRealised PNL: {result['realised_pnl']}\nUnrealized PNL: {result['unrealised_pnl']}"
+            if self.check_uta(client):
+                result = client.get_wallet_balance(accountType="UNIFIED", coin="USDT")[
+                    "result"
+                ]["list"][0]["coin"][0]
+            else:
+                result = client.get_wallet_balance(accountType="CONTACT", coin="USDT")[
+                    "result"
+                ]["list"][0]["coin"][0]
+            tosend = f"Your USDT account balance:\nBalance: {result['equity']}\nAvailable: {result['availableToWithdraw']}\nRealised PNL: {result['cumRealisedPnl']}\nUnrealized PNL: {result['unrealisedPnl']}"
             self.updater.bot.sendMessage(chat_id=chat_id, text=tosend)
         except Exception as e:
             logger.info(str(e))
@@ -207,9 +239,13 @@ class dbOperations:
         result = self.usertable.find_one({"chat_id": chat_id})
         try:
             client = HTTP(
-                endpoint="https://api.bybit.com", api_key=result["api_key"], api_secret=result["api_secret"]
+                testnet=False,
+                api_key=result["api_key"],
+                api_secret=result["api_secret"],
             )
-            result = client.my_position()['result']
+            result = client.get_positions(category="linear", settleCoin="USDT")[
+                "result"
+            ]
         except:
             logger.error("Other errors")
         try:
@@ -219,20 +255,21 @@ class dbOperations:
             MarkPrice = []
             PNL = []
             margin = []
-            for pos in result:
-                pos = pos["data"]
+            for pos in result["list"]:
                 if float(pos["size"]) != 0:
                     try:
-                        mp = client.public_trading_records(symbol=pos['symbol'],limit=1)['result'][0]['price']
+                        mp = client.get_mark_price_kline(
+                            category="linear", interval=1, limit=1, symbol=pos["symbol"]
+                        )["result"]["list"][0][1]
                     except:
-                        mp = pos["entry_price"]
+                        mp = pos["avgPrice"]
                     symbol.append(pos["symbol"])
                     tsize = pos["size"]
                     tsize = tsize if pos["side"] == "Buy" else -tsize
                     size.append(tsize)
-                    EnPrice.append(pos["entry_price"])
+                    EnPrice.append(pos["avgPrice"])
                     MarkPrice.append(mp)
-                    PNL.append(pos["unrealised_pnl"])
+                    PNL.append(pos["unrealisedPnl"])
                     margin.append(pos["leverage"])
             newPosition = pd.DataFrame(
                 {
