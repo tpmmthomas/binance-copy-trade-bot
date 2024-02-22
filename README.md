@@ -1,11 +1,11 @@
 # binance-copy-trade-bot  
 
 > [!IMPORTANT]  
-> The bot is now rebranded to TraderCloneX, and is available as a service so that you do not need to run the server on your own!!! You could make use our hosted telegram server and make trades directly without worrying about technical details. Please make a registration here: <https://forms.gle/98SpxWP7BgjCbxe47>. We will provide you with detailed instructions on how to onboard the service soon.
+> The bot is now rebranded to TraderCloneX, and is available as a service so that you do not need to run the server on your own!!! **You could make use our hosted telegram server and make trades directly without worrying about technical details. Please make a registration here: <https://forms.gle/98SpxWP7BgjCbxe47>.** We will provide you with detailed instructions on how to onboard the service soon. Ask any questions in the discussion tab.
 
 ## Running the bot on your own
 
-This program uses web scraping to monitor the positions opened by traders sharing their positions on Binance Futures Leaderboard. We then mimic the trade in your account using the Bybit api. MongoDB is the database used in this software.
+This program uses web scraping to monitor the positions opened by traders sharing their positions on Binance Futures Leaderboard. We then mimic the trade in your account using the Bybit api. MongoDB is the database used in this software. **Bot updated and working (Feb 2024)**
 
 ### Environment setup (Recommended)
 
