@@ -1,7 +1,7 @@
 # binance-copy-trade-bot  
 
 > [!IMPORTANT]  
-> The bot is now rebranded to TraderCloneX, and is available as a service so that you do not need to run the server on your own!!! Please make a registration here: <https://forms.gle/98SpxWP7BgjCbxe47>. We will provide you with detailed instructions on how to onboard the service soon.
+> The bot is now rebranded to TraderCloneX, and is available as a service so that you do not need to run the server on your own!!! You could make use our hosted telegram server and make trades directly without worrying about technical details. Please make a registration here: <https://forms.gle/98SpxWP7BgjCbxe47>. We will provide you with detailed instructions on how to onboard the service soon.
 
 ## Running the bot on your own
 
@@ -50,6 +50,6 @@ I personally suggest you go to the binance leaderboard, pick a longer timespan (
 
 ### Buy Me A Coffee
 
-Donations are welcome at the following addresses (updated Feb 2024):
+Donations are welcome at the following addresses (updated Feb 2024):  
 BTC: bc1qyacynkmdctszja7zjzw2da50jv8wcltcxxz995  
 ETH / ERC20 tokens in general: 0xcF7D346C0A139DDaE79aed9e9a09bef0D61d1509
