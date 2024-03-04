@@ -7,5 +7,15 @@ db_pw = ""
 admin_chatid = []
 
 discord_webhook = ""
-
-headers = {}
+headers = {
+    "User-Agent": "",
+    "Device-info": "",
+    "Origin": "",
+    "Fvideo-Id": "",
+    "Fvideo-Token": "",
+    "Bnc-Entity-Tag": "",
+    "Bnc-Uuid": "",
+    "Clienttype": "",
+    "Content-Length": "",
+    "Content-Type": "",
+}
